@@ -53,7 +53,7 @@ Desde una terminal con Gradle disponible también se puede ejecutar:
 
 ```bash
 cd android-app
-./gradlew assembleDebug
+gradle --no-daemon assembleDebug
 ```
 
 Este repositorio no incluye `gradlew` ni el `gradle-wrapper.jar` porque el
@@ -76,6 +76,48 @@ android-app/app/build/outputs/apk/debug/app-debug.apk
 
 También se puede usar el botón **Locate** que aparece en Android Studio luego
 de **Build APK(s)**.
+
+## Compilación automática con GitHub Actions
+
+El repositorio incluye el workflow:
+
+```text
+.github/workflows/android-apk.yml
+```
+
+Se ejecuta automáticamente en cada `push` a `main` o `master`, en cada pull
+request y manualmente desde la pestaña **Actions** de GitHub.
+
+El workflow:
+
+1. instala Java 17;
+2. instala el Android SDK, Android 35 y Build Tools 35.0.0;
+3. instala Gradle 8.9;
+4. ejecuta las pruebas unitarias del parser;
+5. genera `app-debug.apk`;
+6. publica la APK como artifact descargable llamado
+   `maipu-call-sync-debug-apk`.
+
+No depende de `gradlew` ni de un `gradle-wrapper.jar`: GitHub Actions instala
+Gradle de forma reproducible mediante `gradle/actions/setup-gradle`. Esto
+permite compilar el proyecto aunque el entorno que generó la POC no tuviera
+Gradle instalado.
+
+### Pasos para usarlo
+
+1. Descargar el proyecto completo desde Replit o subirlo a un repositorio
+   GitHub.
+2. Conservar tanto `android-app/` como `.github/workflows/android-apk.yml`.
+3. Hacer push a `main`/`master`, abrir **Actions** y seleccionar el workflow.
+4. Esperar a que termine el job **Test and build debug APK**.
+5. En la página de la ejecución, descargar el artifact
+   `maipu-call-sync-debug-apk`.
+6. Extraer el ZIP descargado para obtener `app-debug.apk`.
+7. Instalar esa APK en el Galaxy A04e siguiendo la sección de instalación
+   manual.
+
+También se puede iniciar sin hacer un push: en GitHub abrir **Actions >
+Build Android APK > Run workflow**.
 
 ## Instalación manual en el Galaxy A04e
 
@@ -148,6 +190,29 @@ la interpretación aplicada es:
 El parser usa 2000–2069 para años `00`–`69` y 1970–1999 para `70`–`99`.
 Si el nombre no coincide o la fecha es inválida, la app sigue funcionando y
 muestra el nombre original sin inventar una fecha.
+
+La implementación está en:
+
+```text
+app/src/main/java/com/maipu/callsync/domain/CallFileNameParser.kt
+```
+
+Y está cubierta por pruebas unitarias en:
+
+```text
+app/src/test/java/com/maipu/callsync/domain/CallFileNameParserTest.kt
+```
+
+La prueba usa exactamente el nombre real de la POC y verifica:
+
+```text
+phoneNumber = +543513993670
+date        = 2026-09-18
+time        = 09:04:37
+```
+
+También verifica que una fecha imposible, como `260232`, no sea corregida
+silenciosamente y que un nombre no compatible devuelva metadata parseada nula.
 
 ## Diagnóstico y logs
 

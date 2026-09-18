@@ -1,0 +1,255 @@
+Quiero continuar con el proyecto Android nativo MAIPÚ CALL SYNC que acabás de generar dentro de:
+
+android-app/
+
+IMPORTANTE:
+
+NO quiero reconstruir la aplicación.
+NO quiero cambiarla por una PWA.
+NO quiero React Native.
+NO quiero Flutter.
+NO quiero agregar todavía backend, nube ni sincronización.
+NO modificar el objetivo funcional de la POC existente.
+
+El proyecto actual debe conservar:
+
+- Kotlin
+- Android nativo
+- MediaStore.Audio
+- permiso READ_MEDIA_AUDIO para Android 13+
+- búsqueda de archivos .m4a
+- filtro Recordings/
+- identificación preferente de Recordings/Call/
+- lectura de metadata
+- reproducción mediante Content URI
+- diagnóstico
+- parser del nombre de archivo Samsung
+
+OBJETIVO DE ESTA ETAPA
+
+Necesito obtener un archivo APK instalable para probar la aplicación en nuestro dispositivo real:
+
+Samsung Galaxy A04e
+Modelo SM-A042M
+Android 13
+One UI Core 5.0
+
+Como este entorno Replit no dispone actualmente de todas las herramientas necesarias para compilar Android, quiero preparar el proyecto para que pueda compilarse automáticamente mediante GitHub Actions.
+
+PASO 1 — REVISAR EL PROYECTO
+
+Antes de crear el workflow:
+
+1. Revisar que android-app/ sea un proyecto Android Gradle válido.
+2. Revisar settings.gradle / settings.gradle.kts.
+3. Revisar build.gradle / build.gradle.kts raíz.
+4. Revisar app/build.gradle / app/build.gradle.kts.
+5. Revisar gradle.properties.
+6. Revisar AndroidManifest.xml.
+7. Revisar compatibilidad entre:
+   - Android Gradle Plugin
+   - Gradle Wrapper
+   - Java/JDK
+   - compileSdk
+   - targetSdk
+   - minSdk
+
+Corregir únicamente problemas necesarios para permitir la compilación.
+
+NO modificar innecesariamente la lógica funcional de la aplicación.
+
+PASO 2 — GRADLE WRAPPER
+
+Verificar que el proyecto incluya correctamente:
+
+gradlew
+gradlew.bat
+gradle/wrapper/gradle-wrapper.properties
+
+y los archivos necesarios del Gradle Wrapper.
+
+Si falta alguno, generarlo o configurar el proyecto correctamente.
+
+El repositorio debe poder ejecutar:
+
+./gradlew assembleDebug
+
+desde un entorno Linux con Android SDK.
+
+PASO 3 — GITHUB ACTIONS
+
+Crear un workflow:
+
+.github/workflows/build-android.yml
+
+El workflow debe:
+
+1. Ejecutarse manualmente mediante workflow_dispatch.
+2. Ejecutarse también cuando haya push sobre la rama principal si cambia algo dentro de android-app/.
+3. Utilizar Ubuntu.
+4. Hacer checkout del repositorio.
+5. Instalar/configurar una versión de Java compatible con el proyecto.
+6. Configurar Android SDK si es necesario.
+7. Dar permisos de ejecución a gradlew.
+8. Ejecutar la compilación DEBUG.
+
+IMPORTANTE:
+
+El proyecto Android está dentro de:
+
+android-app/
+
+Por lo tanto el workflow debe ejecutar Gradle desde esa carpeta.
+
+Comando esperado:
+
+./gradlew assembleDebug
+
+PASO 4 — APK COMO ARTIFACTO
+
+Después de una compilación exitosa, localizar:
+
+android-app/app/build/outputs/apk/debug/app-debug.apk
+
+Subir ese archivo como artifact de GitHub Actions.
+
+Nombre del artifact:
+
+maipu-call-sync-debug
+
+El objetivo es que después de ejecutar el workflow pueda ingresar a GitHub:
+
+Actions
+→ Build Android
+→ ejecución correspondiente
+→ Artifacts
+→ maipu-call-sync-debug
+
+y descargar la APK.
+
+PASO 5 — NO IMPLEMENTAR FIRMA PRODUCTIVA
+
+Esta es solamente una POC.
+
+NO configurar todavía:
+
+- Play Store
+- Google Play Console
+- keystore productivo
+- firma release
+- distribución empresarial
+- Samsung Knox
+- Firebase App Distribution
+
+La APK debug es suficiente para esta prueba.
+
+PASO 6 — REVISAR EL PARSER SAMSUNG
+
+Antes de finalizar, revisar el parser del nombre de archivo.
+
+Tenemos un archivo REAL generado por nuestro Samsung:
+
+Grabación de llamada +543513993670_260918_090437.m4a
+
+En nuestro caso:
+
+260918 = 18/09/2026
+090437 = 09:04:37
+
+Por lo tanto el patrón observado es:
+
+YYMMDD_HHMMSS
+
+Es decir:
+
+26 = año 2026
+09 = septiembre
+18 = día 18
+
+Confirmar que el código interpreta exactamente este patrón.
+
+No interpretar 260918 como DDMMYY.
+
+Agregar un test unitario para este ejemplo si la estructura actual del proyecto lo permite.
+
+Resultado esperado:
+
+phoneNumber = +543513993670
+date = 18/09/2026
+time = 09:04:37
+
+PASO 7 — README
+
+Actualizar el README con una sección:
+
+GENERAR APK CON GITHUB ACTIONS
+
+Explicar paso a paso:
+
+1. Cómo conectar/subir este proyecto a GitHub.
+2. Cómo acceder a la pestaña Actions.
+3. Cómo ejecutar manualmente Build Android.
+4. Cómo saber si la compilación fue exitosa.
+5. Cómo descargar el artifact maipu-call-sync-debug.
+6. Cómo obtener app-debug.apk.
+7. Cómo transferir la APK al Samsung Galaxy A04e.
+8. Cómo permitir temporalmente la instalación de aplicaciones desconocidas.
+9. Cómo instalar la APK.
+10. Cómo abrir Maipú Call Sync.
+11. Qué permiso debería solicitar Android 13.
+12. Cómo realizar la prueba.
+
+PRUEBA EN EL SAMSUNG
+
+Una vez instalada la APK, la prueba que realizaremos manualmente será:
+
+1. Abrir Maipú Call Sync.
+2. Autorizar acceso a audio.
+3. Verificar si detecta las grabaciones existentes.
+4. Realizar una llamada saliente desde Samsung Phone.
+5. Finalizar la llamada.
+6. Confirmar que Samsung genera el .m4a.
+7. Volver a Maipú Call Sync.
+8. Presionar BUSCAR GRABACIONES.
+9. Confirmar que aparece la nueva llamada.
+10. Revisar teléfono, fecha, hora, duración y tamaño.
+11. Presionar REPRODUCIR.
+12. Confirmar que nuestra aplicación puede leer y reproducir la grabación.
+
+CRITERIO DE ÉXITO
+
+La POC será exitosa si:
+
+Samsung Phone
+→ genera .m4a
+→ MediaStore lo expone
+→ Maipú Call Sync lo encuentra
+→ muestra metadata
+→ puede abrir/reproducir el Content URI.
+
+IMPORTANTE:
+
+No afirmar que esta prueba funciona hasta ejecutarla físicamente en nuestro Samsung Galaxy A04e.
+
+Si durante la revisión detectás que existe alguna restricción de Android 13 o Samsung que pueda impedir que MediaStore.Audio exponga los archivos de Recordings/Call a nuestra aplicación, documentarla claramente, pero NO reemplazar la arquitectura ni implementar workarounds invasivos todavía.
+
+Primero queremos probar el camino oficial.
+
+AL FINAL
+
+Quiero que me informes claramente:
+
+1. Si el proyecto quedó preparado para GitHub Actions.
+2. Qué archivos creaste o modificaste.
+3. Qué versión de Java utilizaste.
+4. Qué versión de Gradle utilizaste.
+5. Qué versión de Android Gradle Plugin utilizaste.
+6. Si pudiste validar estáticamente la configuración.
+7. Si existe alguna limitación pendiente.
+8. Los pasos EXACTOS que debo hacer yo a continuación para obtener la APK.
+
+No avanzar todavía con sincronización cloud.
+
+Nuestro único objetivo actual sigue siendo validar en el Samsung real:
+
+¿Maipú Call Sync puede detectar y leer las grabaciones creadas por Samsung Phone?

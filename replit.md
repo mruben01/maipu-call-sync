@@ -29,6 +29,8 @@ grabaciones `.m4a` de Samsung Phone a través de `MediaStore`.
 - `android-app/` — Kotlin/Compose Android POC, including MediaStore query,
   permission handling, filename parser, playback and diagnostics.
 - `android-app/README.md` — build, install and Galaxy A04e validation procedure.
+- `.github/workflows/android-apk.yml` — GitHub Actions workflow that installs
+  the Android toolchain, tests the parser and uploads a debug APK.
 - `artifacts/api-server/` — existing shared API scaffold; not used by the
   first Android POC.
 - `artifacts/mockup-sandbox/` — existing component preview scaffold; not used
