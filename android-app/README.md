@@ -24,13 +24,44 @@ URI es accesible, las reproduce directamente mediante `Content URI`.
 - No contiene backend, autenticación corporativa, sincronización, WorkManager,
   TIMM, WISE, Power BI, transcripción, IA, publicidad ni trackers.
 
+## Compatibilidad de herramientas
+
+La configuración queda fijada así:
+
+```text
+Gradle Wrapper: 8.9
+Android Gradle Plugin: 8.7.3
+Java/JDK en GitHub Actions: Temurin 17
+compileSdk: 35
+targetSdk: 35
+minSdk: 26
+```
+
+El proyecto incluye todos los archivos del Gradle Wrapper:
+
+```text
+gradlew
+gradlew.bat
+gradle/wrapper/gradle-wrapper.jar
+gradle/wrapper/gradle-wrapper.properties
+```
+
 ## Limitación de este entorno
 
-El entorno donde se generó el código no dispone de Java, Gradle, Android SDK ni
-ADB. Por esa razón no se pudo producir ni probar una APK aquí. El proyecto está
-preparado para abrirse y compilarse en Android Studio en una máquina con el
-Android SDK instalado. No se afirma que la POC funcione en el Galaxy A04e hasta
-ejecutar la prueba real descrita abajo.
+El Wrapper se pudo ejecutar y descargar Gradle 8.9 correctamente. La
+compilación local se detiene porque este entorno Replit no tiene Android SDK
+configurado:
+
+```text
+SDK location not found. Define a valid SDK location with an ANDROID_HOME
+environment variable or by setting the sdk.dir path in local.properties.
+```
+
+Por esa razón no se produjo ni se validó una APK aquí. GitHub Actions instala
+Android SDK 35 y Build Tools 35.0.0 antes de ejecutar el mismo Wrapper, por lo
+que la compilación automática es el camino preparado para esta POC. No se
+afirma que la funcionalidad completa funcione en el Galaxy A04e hasta ejecutar
+la prueba física descrita abajo.
 
 ## Requisitos para compilar
 
@@ -49,22 +80,17 @@ ejecutar la prueba real descrita abajo.
 5. Ejecutar `app` para instalarla en un dispositivo conectado, o usar
    **Build > Build Bundle(s) / APK(s) > Build APK(s)**.
 
-Desde una terminal con Gradle disponible también se puede ejecutar:
+El proyecto incluye el Gradle Wrapper, por lo que desde Linux se puede
+ejecutar:
 
 ```bash
 cd android-app
-gradle --no-daemon assembleDebug
+./gradlew assembleDebug
 ```
 
-Este repositorio no incluye `gradlew` ni el `gradle-wrapper.jar` porque el
-entorno de generación no tenía Gradle para crearlos. Android Studio puede
-sincronizar este proyecto con su Gradle integrado. Si se desea usar terminal,
-desde Android Studio se puede ejecutar **File > Sync Project with Gradle Files**
-y luego generar un wrapper con Gradle instalado:
-
-```bash
-gradle wrapper --gradle-version 8.9
-```
+El Wrapper está fijado a Gradle 8.9 en
+`gradle/wrapper/gradle-wrapper.properties`. En el primer uso descarga esa
+versión automáticamente.
 
 ## Ubicación de la APK
 
@@ -82,42 +108,46 @@ de **Build APK(s)**.
 El repositorio incluye el workflow:
 
 ```text
-.github/workflows/android-apk.yml
+.github/workflows/build-android.yml
 ```
 
-Se ejecuta automáticamente en cada `push` a `main` o `master`, en cada pull
-request y manualmente desde la pestaña **Actions** de GitHub.
+Se ejecuta manualmente mediante `workflow_dispatch` y automáticamente en cada
+`push` a `main` o `master` que modifique `android-app/`.
 
 El workflow:
 
 1. instala Java 17;
 2. instala el Android SDK, Android 35 y Build Tools 35.0.0;
-3. instala Gradle 8.9;
-4. ejecuta las pruebas unitarias del parser;
-5. genera `app-debug.apk`;
+3. da permisos de ejecución a `android-app/gradlew`;
+4. ejecuta las pruebas unitarias del parser desde `android-app/`;
+5. ejecuta `./gradlew assembleDebug` desde `android-app/`;
 6. publica la APK como artifact descargable llamado
-   `maipu-call-sync-debug-apk`.
-
-No depende de `gradlew` ni de un `gradle-wrapper.jar`: GitHub Actions instala
-Gradle de forma reproducible mediante `gradle/actions/setup-gradle`. Esto
-permite compilar el proyecto aunque el entorno que generó la POC no tuviera
-Gradle instalado.
+   `maipu-call-sync-debug`.
 
 ### Pasos para usarlo
 
-1. Descargar el proyecto completo desde Replit o subirlo a un repositorio
-   GitHub.
-2. Conservar tanto `android-app/` como `.github/workflows/android-apk.yml`.
-3. Hacer push a `main`/`master`, abrir **Actions** y seleccionar el workflow.
-4. Esperar a que termine el job **Test and build debug APK**.
-5. En la página de la ejecución, descargar el artifact
-   `maipu-call-sync-debug-apk`.
-6. Extraer el ZIP descargado para obtener `app-debug.apk`.
-7. Instalar esa APK en el Galaxy A04e siguiendo la sección de instalación
-   manual.
-
-También se puede iniciar sin hacer un push: en GitHub abrir **Actions >
-Build Android APK > Run workflow**.
+1. Descargar el proyecto completo desde Replit, incluyendo la carpeta oculta
+   `.github/`, o subirlo a un repositorio GitHub.
+2. Verificar que el repositorio contenga `android-app/` y
+   `.github/workflows/build-android.yml`.
+3. Hacer push a la rama `main` o `master`.
+4. En GitHub abrir **Actions** y seleccionar **Build Android**.
+5. Para ejecutarlo manualmente, pulsar **Run workflow**, elegir la rama y
+   confirmar.
+6. Abrir la ejecución correspondiente y esperar el job **Test and build debug
+   APK**.
+7. La compilación es exitosa cuando el job aparece con estado verde y finaliza
+   la etapa **Build debug APK**.
+8. En la página de la ejecución, descargar el artifact
+   `maipu-call-sync-debug`.
+9. Extraer el ZIP descargado para obtener `app-debug.apk`.
+10. Transferir `app-debug.apk` al Samsung por cable USB, Google Drive,
+    almacenamiento compartido u otro medio local.
+11. Abrir el APK desde **Mis archivos** en el Samsung. Si Android lo solicita,
+    entrar en **Ajustes > Datos biométricos y seguridad > Instalar apps
+    desconocidas**, seleccionar **Mis archivos** y activar temporalmente el
+    permiso.
+12. Volver a abrir el APK, pulsar **Instalar** y abrir **Maipú Call Sync**.
 
 ## Instalación manual en el Galaxy A04e
 
@@ -128,13 +158,13 @@ Build Android APK > Run workflow**.
 3. Seleccionar el Galaxy A04e en Android Studio.
 4. Ejecutar la configuración `app`.
 
-### Opción B: APK
+### Opción B: APK descargada desde GitHub
 
 1. Copiar `app-debug.apk` al teléfono.
 2. Abrir el archivo desde Mis archivos.
-3. Si Android lo solicita, permitir temporalmente la instalación desde esa
-   fuente.
-4. Instalar **Maipú Call Sync**.
+3. Permitir temporalmente la instalación desde **Mis archivos** si Android lo
+   solicita.
+4. Instalar **Maipú Call Sync** y abrirla.
 
 ## Permiso esperado en Android 13
 
