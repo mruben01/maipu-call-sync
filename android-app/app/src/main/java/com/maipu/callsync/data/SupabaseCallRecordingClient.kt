@@ -84,16 +84,15 @@ class SupabaseCallRecordingClient(context: Context) {
             .put("sync_status", "synced")
             .toString()
 
-        val url = endpoint("rest", "v1", "call_recordings")
-            .newBuilder()
-            .addQueryParameter("on_conflict", "storage_path")
-            .build()
-        val request = authorizedRequest(url)
-            .header("Prefer", "resolution=ignore-duplicates,return=minimal")
+        val request = authorizedRequest(endpoint("rest", "v1", "call_recordings"))
+            .header("Prefer", "return=minimal")
             .post(payload.toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
         execute(request, "registro de metadatos") { response, responseBody ->
+            if (isExistingMetadataConflict(response.code, responseBody)) {
+                return@execute
+            }
             if (!response.isSuccessful) {
                 throw postgrestError(response.code, responseBody)
             }
@@ -264,3 +263,12 @@ class SupabaseCallRecordingClient(context: Context) {
 }
 
 class SyncOperationException(message: String) : IOException(message)
+
+internal fun isExistingMetadataConflict(statusCode: Int, responseBody: String): Boolean {
+    if (statusCode != 409) return false
+    val error = runCatching { JSONObject(responseBody) }.getOrNull() ?: return false
+    return error.opt("code") == "23505" &&
+        error.opt("message") ==
+            "duplicate key value violates unique constraint " +
+                "\"call_recordings_storage_path_key\""
+}
