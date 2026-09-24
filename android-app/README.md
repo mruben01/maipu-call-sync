@@ -128,10 +128,10 @@ el código fuente, queda dentro de la APK y puede extraerse. No usar aquí una
 La sincronización calcula SHA-256 leyendo el URI en streaming. El objeto se
 guarda con la ruta `<sha256>.m4a`, sin incluir número de teléfono ni nombre
 original en la ruta. La app usa esa ruta estable para que repetir una solicitud
-no cree otro objeto. Para que el registro de metadatos también sea idempotente,
-aplicar una vez el SQL de
-`supabase/migrations/20260924000000_unique_call_recordings_storage_path.sql`.
-Si ya hay filas, revisar duplicados de `storage_path` antes de crear el índice.
+no cree otro objeto. Para hacer idempotente el registro de metadatos, el SQL de
+`supabase/migrations/20260924000000_unique_call_recordings_storage_path.sql`
+establece `storage_path` como `NOT NULL` y `UNIQUE`. La migración falla si
+encuentra valores duplicados o nulos; no elimina ni modifica filas existentes.
 
 ## Ubicación de la APK
 
