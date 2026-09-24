@@ -11,7 +11,11 @@ import com.maipu.callsync.audio.AudioPlaybackController
 import com.maipu.callsync.audio.PlaybackState
 import com.maipu.callsync.data.CallRecording
 import com.maipu.callsync.data.CallRecordingRepository
+import com.maipu.callsync.data.CallRecordingSyncRepository
 import com.maipu.callsync.data.DiagnosticReport
+import com.maipu.callsync.data.SyncRecordState
+import com.maipu.callsync.data.SyncStatus
+import com.maipu.callsync.data.syncSourceKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +24,7 @@ import kotlinx.coroutines.launch
 
 class CallSyncViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = CallRecordingRepository(application)
+    private val syncRepository = CallRecordingSyncRepository(application)
     private val playback = AudioPlaybackController(application) { state ->
         _uiState.value = _uiState.value.copy(playbackState = state)
     }
@@ -51,13 +56,42 @@ class CallSyncViewModel(application: Application) : AndroidViewModel(application
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch(Dispatchers.IO) {
             val result = repository.findRecordings(permissionGranted)
+            val syncStatuses = syncRepository.statesFor(result.recordings)
             _uiState.value = _uiState.value.copy(
                 isLoading = false,
                 recordings = result.recordings,
+                syncStatuses = syncStatuses,
                 diagnostics = result.diagnostics,
                 errorMessage = result.diagnostics.errors.firstOrNull(),
             )
         }
+    }
+
+    fun syncRecording(recording: CallRecording) {
+        if (!hasAudioPermission()) {
+            refreshPermissionState()
+            _uiState.value = _uiState.value.copy(
+                errorMessage = "Autorice el acceso a audio antes de sincronizar.",
+            )
+            return
+        }
+        syncQueue(listOf(recording))
+    }
+
+    fun syncPending() {
+        if (!hasAudioPermission()) {
+            refreshPermissionState()
+            _uiState.value = _uiState.value.copy(
+                errorMessage = "Autorice el acceso a audio antes de sincronizar.",
+            )
+            return
+        }
+
+        val currentState = _uiState.value
+        val pending = currentState.recordings.filter { recording ->
+            currentState.syncStatuses[recording.syncSourceKey()]?.status != SyncStatus.SYNCED
+        }
+        syncQueue(pending)
     }
 
     fun togglePlayback(recording: CallRecording) {
@@ -67,6 +101,49 @@ class CallSyncViewModel(application: Application) : AndroidViewModel(application
     override fun onCleared() {
         playback.release()
         super.onCleared()
+    }
+
+    private fun syncQueue(recordings: List<CallRecording>) {
+        if (recordings.isEmpty() || _uiState.value.isSyncing) return
+
+        _uiState.value = _uiState.value.copy(
+            isSyncing = true,
+            syncingSourceKey = null,
+            errorMessage = null,
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                recordings.forEach { recording ->
+                    val sourceKey = recording.syncSourceKey()
+                    val previousState = runCatching {
+                        syncRepository.stateFor(recording)
+                    }.getOrDefault(SyncRecordState())
+                    _uiState.value = _uiState.value.copy(
+                        syncingSourceKey = sourceKey,
+                        syncStatuses = _uiState.value.syncStatuses +
+                            (sourceKey to previousState),
+                    )
+                    val completedState = runCatching {
+                        syncRepository.sync(recording)
+                    }.getOrElse { exception ->
+                        SyncRecordState(
+                            status = SyncStatus.FAILED,
+                            lastError = "No se pudo guardar el estado local " +
+                                "(${exception.javaClass.simpleName}).",
+                        )
+                    }
+                    _uiState.value = _uiState.value.copy(
+                        syncStatuses = _uiState.value.syncStatuses +
+                            (sourceKey to completedState),
+                    )
+                }
+            } finally {
+                _uiState.value = _uiState.value.copy(
+                    isSyncing = false,
+                    syncingSourceKey = null,
+                )
+            }
+        }
     }
 
     private fun hasAudioPermission(): Boolean {
@@ -86,6 +163,9 @@ data class CallSyncUiState(
     val permissionGranted: Boolean = false,
     val isLoading: Boolean = false,
     val recordings: List<CallRecording> = emptyList(),
+    val syncStatuses: Map<String, SyncRecordState> = emptyMap(),
+    val isSyncing: Boolean = false,
+    val syncingSourceKey: String? = null,
     val diagnostics: DiagnosticReport = DiagnosticReport(),
     val errorMessage: String? = null,
     val playbackState: PlaybackState = PlaybackState.Idle,

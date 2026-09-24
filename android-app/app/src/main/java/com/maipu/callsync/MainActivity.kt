@@ -33,6 +33,8 @@ class MainActivity : ComponentActivity() {
                 },
                 onScan = viewModel::scan,
                 onPlay = viewModel::togglePlayback,
+                onSync = viewModel::syncRecording,
+                onSyncPending = viewModel::syncPending,
             )
         }
     }

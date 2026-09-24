@@ -36,6 +36,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.maipu.callsync.audio.PlaybackState
 import com.maipu.callsync.data.CallRecording
+import com.maipu.callsync.data.SyncRecordState
+import com.maipu.callsync.data.SyncStatus
+import com.maipu.callsync.data.syncSourceKey
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -47,7 +50,13 @@ fun CallSyncScreen(
     onRequestPermission: () -> Unit,
     onScan: () -> Unit,
     onPlay: (CallRecording) -> Unit,
+    onSync: (CallRecording) -> Unit,
+    onSyncPending: () -> Unit,
 ) {
+    val pendingSyncCount = state.recordings.count { recording ->
+        state.syncStatuses[recording.syncSourceKey()]?.status != SyncStatus.SYNCED
+    }
+
     MaterialTheme {
         Scaffold(
             topBar = {
@@ -85,7 +94,10 @@ fun CallSyncScreen(
                     SearchPanel(
                         count = state.recordings.size,
                         isLoading = state.isLoading,
+                        pendingSyncCount = pendingSyncCount,
+                        isSyncing = state.isSyncing,
                         onScan = onScan,
+                        onSyncPending = onSyncPending,
                     )
                 }
                 state.errorMessage?.let { message ->
@@ -110,7 +122,13 @@ fun CallSyncScreen(
                         RecordingCard(
                             recording = recording,
                             playbackState = state.playbackState,
+                            syncState = state.syncStatuses[recording.syncSourceKey()]
+                                ?: SyncRecordState(),
+                            isSyncing = state.isSyncing,
+                            isCurrentSync =
+                                state.syncingSourceKey == recording.syncSourceKey(),
                             onPlay = { onPlay(recording) },
+                            onSync = { onSync(recording) },
                         )
                     }
                 }
@@ -189,7 +207,10 @@ private fun PermissionPanel(
 private fun SearchPanel(
     count: Int,
     isLoading: Boolean,
+    pendingSyncCount: Int,
+    isSyncing: Boolean,
     onScan: () -> Unit,
+    onSyncPending: () -> Unit,
 ) {
     Card {
         Column(
@@ -211,6 +232,19 @@ private fun SearchPanel(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(if (isLoading) "BUSCANDO..." else "BUSCAR GRABACIONES")
+            }
+            OutlinedButton(
+                onClick = onSyncPending,
+                enabled = !isSyncing && pendingSyncCount > 0,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    if (isSyncing) {
+                        "SINCRONIZANDO..."
+                    } else {
+                        "SINCRONIZAR PENDIENTES ($pendingSyncCount)"
+                    },
+                )
             }
         }
     }
@@ -251,7 +285,11 @@ private fun ErrorPanel(message: String) {
 private fun RecordingCard(
     recording: CallRecording,
     playbackState: PlaybackState,
+    syncState: SyncRecordState,
+    isSyncing: Boolean,
+    isCurrentSync: Boolean,
     onPlay: () -> Unit,
+    onSync: () -> Unit,
 ) {
     val parsed = recording.parsedFileName
     val isCurrent = when (playbackState) {
@@ -326,6 +364,61 @@ private fun RecordingCard(
                     text = playbackState.message,
                     color = MaterialTheme.colorScheme.error,
                 )
+            }
+            SyncStatusPanel(
+                state = syncState,
+                isSyncing = isSyncing,
+                isCurrentSync = isCurrentSync,
+                onSync = onSync,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SyncStatusPanel(
+    state: SyncRecordState,
+    isSyncing: Boolean,
+    isCurrentSync: Boolean,
+    onSync: () -> Unit,
+) {
+    val statusText = when {
+        isCurrentSync -> "Sincronizando..."
+        else -> when (state.status) {
+            SyncStatus.PENDING -> "Pendiente"
+            SyncStatus.UPLOADING -> "Subiendo audio"
+            SyncStatus.AUDIO_UPLOADED -> "Audio subido; falta registrar metadatos"
+            SyncStatus.SYNCED -> "Sincronizada"
+            SyncStatus.FAILED -> "Error"
+        }
+    }
+    val buttonText = when {
+        isCurrentSync -> "SINCRONIZANDO..."
+        state.status == SyncStatus.AUDIO_UPLOADED -> "REINTENTAR REGISTRO"
+        state.status == SyncStatus.FAILED -> "REINTENTAR"
+        else -> "SINCRONIZAR"
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            text = "Estado de sincronización: $statusText",
+            fontWeight = FontWeight.SemiBold,
+        )
+        if (state.attemptCount > 0) {
+            Text("Intentos: ${state.attemptCount}")
+        }
+        state.lastError?.let { error ->
+            Text(
+                text = error,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        if (state.status != SyncStatus.SYNCED) {
+            OutlinedButton(
+                onClick = onSync,
+                enabled = !isSyncing,
+            ) {
+                Text(buttonText)
             }
         }
     }

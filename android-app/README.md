@@ -1,10 +1,10 @@
 # Maipú Call Sync — POC Android nativa
 
 Esta carpeta contiene el proyecto Android nativo de la prueba de concepto.
-La aplicación **no graba llamadas**, no usa VoIP/SIP, no copia ni borra archivos
-y no sube audio a Internet. Consulta `MediaStore.Audio` para comprobar si
-Samsung Phone expone sus grabaciones `.m4a` a otras aplicaciones y, cuando el
-URI es accesible, las reproduce directamente mediante `Content URI`.
+La aplicación **no graba llamadas** ni usa VoIP/SIP. Consulta `MediaStore.Audio`
+para detectar grabaciones `.m4a` de Samsung Phone, las reproduce mediante su
+`Content URI` y permite subirlas manualmente a Supabase sin moverlas ni
+eliminarlas.
 
 ## Alcance implementado
 
@@ -21,8 +21,15 @@ URI es accesible, las reproduce directamente mediante `Content URI`.
   `Grabación de llamada +543513993670_260918_090437.m4a`.
 - Reproducción por `Content URI`, sin copiar el audio.
 - Sección de diagnóstico con conteos, dispositivo, versión Android y errores.
-- No contiene backend, autenticación corporativa, sincronización, WorkManager,
-  TIMM, WISE, Power BI, transcripción, IA, publicidad ni trackers.
+- Sincronización manual con Supabase Storage (`call-recordings`) y Data API
+  (`public.call_recordings`).
+- Lectura del audio por streaming desde `ContentResolver`; no se guarda una
+  copia temporal completa.
+- Identificador aleatorio por instalación y estado local de sincronización,
+  reintentos y errores.
+- No contiene WorkManager ni sincronización automática en segundo plano.
+- No incluye autenticación corporativa, TIMM, WISE, Power BI, transcripción,
+  IA, publicidad ni trackers.
 
 ## Compatibilidad de herramientas
 
@@ -91,6 +98,40 @@ cd android-app
 El Wrapper está fijado a Gradle 8.9 en
 `gradle/wrapper/gradle-wrapper.properties`. En el primer uso descarga esa
 versión automáticamente.
+
+## Configuración de Supabase
+
+Gradle lee `SUPABASE_URL` y `SUPABASE_PUBLISHABLE_KEY` del entorno de
+compilación y los genera en `BuildConfig`. No se guardan valores en el código
+fuente ni se escriben en logs. Si no están presentes al compilar, la aplicación
+mostrará un error de configuración al intentar sincronizar.
+
+Ejemplo de compilación local (reemplazar los marcadores en el entorno local;
+no guardar valores en el repositorio):
+
+```bash
+SUPABASE_URL="<project-url>" \
+SUPABASE_PUBLISHABLE_KEY="<publishable-key>" \
+./gradlew assembleDebug
+```
+
+Las Secrets de Replit no se transfieren automáticamente a Android Studio ni a
+GitHub Actions. Para generar una APK utilizable, esas variables deben estar
+disponibles en el entorno que ejecute Gradle. El workflow de GitHub Actions
+requiere configurar los mismos nombres como GitHub Actions Secrets si se usa
+para producir APKs sincronizables.
+
+La publishable key está diseñada para clientes públicos; aunque no aparece en
+el código fuente, queda dentro de la APK y puede extraerse. No usar aquí una
+`service_role` key. El acceso sigue dependiendo de las policies de Supabase.
+
+La sincronización calcula SHA-256 leyendo el URI en streaming. El objeto se
+guarda con la ruta `<sha256>.m4a`, sin incluir número de teléfono ni nombre
+original en la ruta. La app usa esa ruta estable para que repetir una solicitud
+no cree otro objeto. Para que el registro de metadatos también sea idempotente,
+aplicar una vez el SQL de
+`supabase/migrations/20260924000000_unique_call_recordings_storage_path.sql`.
+Si ya hay filas, revisar duplicados de `storage_path` antes de crear el índice.
 
 ## Ubicación de la APK
 
@@ -191,6 +232,17 @@ ni rutas físicas absolutas.
 8. Confirmar que aparece la grabación, su metadata y el `Content URI`.
 9. Presionar **REPRODUCIR** y confirmar que se escucha el archivo.
 
+10. Presionar **SINCRONIZAR** en una grabación (o **SINCRONIZAR PENDIENTES**).
+11. Confirmar en la app el estado **Sincronizada** y verificar que el objeto y
+    la fila correspondiente aparezcan en Supabase.
+
+Los fallos quedan guardados localmente con un mensaje seguro para mostrar y un
+contador de intentos. Si la subida de audio ya fue confirmada pero falla la
+inserción de metadatos, el botón de reintento vuelve a insertar los metadatos
+sin volver a transmitir el audio. El campo remoto `sync_status` se inserta como
+`synced` solo después de completar ambas operaciones; los errores se conservan
+localmente porque la tabla actual no tiene una columna de error.
+
 El resultado exitoso responde que, en ese modelo/configuración, la aplicación
 puede detectar y leer las grabaciones expuestas por Samsung Phone. Si el
 archivo existe en el almacenamiento pero no aparece en la aplicación, el
@@ -275,13 +327,7 @@ La POC no usa `DATA` ni una ruta absoluta como requisito. La única referencia
 de ubicación usada para filtrar es `MediaStore.MediaColumns.RELATIVE_PATH`
 cuando Android la proporciona.
 
-## Próxima fase, fuera de esta POC
+## Siguiente fase
 
-No está implementada. Solo queda como dirección arquitectónica:
-
-`Samsung Phone → MediaStore → Maipú Call Sync → API HTTPS → Cloud Storage /
-base de datos → TIMM / dashboards`
-
-En una fase posterior podrían evaluarse WorkManager, deduplicación y
-sincronización de pendientes, pero no deben agregarse hasta completar los
-nueve puntos de la prueba de éxito.
+La automatización en segundo plano con WorkManager sigue fuera de esta etapa.
+Por ahora, el usuario inicia cada sincronización desde la pantalla.
