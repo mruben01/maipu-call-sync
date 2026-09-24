@@ -95,15 +95,7 @@ class SupabaseCallRecordingClient(context: Context) {
 
         execute(request, "registro de metadatos") { response, responseBody ->
             if (!response.isSuccessful) {
-                if (responseBody.contains("no unique", ignoreCase = true) ||
-                    responseBody.contains("on conflict", ignoreCase = true)
-                ) {
-                    throw SyncOperationException(
-                        "Supabase necesita una restricción UNIQUE en " +
-                            "public.call_recordings.storage_path.",
-                    )
-                }
-                throw apiError("registro de metadatos", response.code)
+                throw postgrestError(response.code, responseBody)
             }
         }
     }
@@ -194,6 +186,34 @@ class SupabaseCallRecordingClient(context: Context) {
                 else -> "Falló la $operation en Supabase (HTTP $statusCode)."
             },
         )
+
+    private fun postgrestError(
+        statusCode: Int,
+        responseBody: String,
+    ): SyncOperationException {
+        val errorJson = runCatching { JSONObject(responseBody) }.getOrNull()
+        fun field(name: String): String =
+            errorJson
+                ?.opt(name)
+                ?.takeUnless { it == JSONObject.NULL }
+                ?.toString()
+                ?.takeIf { it.isNotBlank() }
+                ?: "(no informado)"
+
+        val completeBody = responseBody.ifBlank { "(cuerpo vacío)" }
+        return SyncOperationException(
+            buildString {
+                appendLine("Falló el registro de metadatos en Supabase.")
+                appendLine("HTTP status: $statusCode")
+                appendLine("code: ${field("code")}")
+                appendLine("message: ${field("message")}")
+                appendLine("details: ${field("details")}")
+                appendLine("hint: ${field("hint")}")
+                appendLine("Cuerpo completo de PostgREST:")
+                append(completeBody)
+            },
+        )
+    }
 
     private class ContentUriRequestBody(
         private val resolver: ContentResolver,
