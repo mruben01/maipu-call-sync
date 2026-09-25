@@ -327,7 +327,9 @@ silenciosamente y que un nombre no compatible devuelva metadata parseada nula.
 
 ## Diagnóstico y logs
 
-La sección **DIAGNÓSTICO** muestra:
+El diagnóstico interno conserva información para soporte técnico; la sección
+**Soporte y diagnóstico** ya no aparece en la interfaz del vendedor. La
+información disponible para investigar problemas incluye:
 
 - cantidad total de audios que devolvió `MediaStore.Audio`;
 - cantidad con ruta relativa dentro de `Recordings`;
@@ -347,8 +349,8 @@ Si no aparece ninguna grabación:
 
 1. Confirmar que el permiso está en **AUTORIZADO**.
 2. Confirmar que Samsung Phone realmente creó el `.m4a`.
-3. Presionar **BUSCAR GRABACIONES** después de terminar la llamada.
-4. Revisar los tres conteos del diagnóstico.
+3. Abrir Inicio después de terminar la llamada y esperar la nueva lectura.
+4. Revisar los conteos de diagnóstico interno con soporte técnico.
 5. Revisar `adb logcat` y el mensaje de error mostrado.
 6. Comprobar si la ruta que Samsung muestra es `Recordings/Call/`.
 
