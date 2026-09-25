@@ -78,16 +78,14 @@ android {
     }
 }
 
-// Local release builds must fail rather than silently producing an unsigned APK.
-// Debug builds and unit tests remain usable without signing secrets.
-tasks.matching { it.name == "preReleaseBuild" }.configureEach {
-    doFirst {
-        if (releaseKeystorePath == null ||
+// Validate before release packaging, but do not block unsigned JVM release unit tests.
+gradle.taskGraph.whenReady {
+    if ((hasTask(":app:packageRelease") || hasTask(":app:bundleRelease")) &&
+        (releaseKeystorePath == null ||
             releaseSigningPassword == null ||
-            !file(releaseKeystorePath).isFile
-        ) {
-            throw GradleException("Falta la configuración de firma release de Maipú.")
-        }
+            !file(releaseKeystorePath).isFile)
+    ) {
+        throw GradleException("Falta la configuración de firma release de Maipú.")
     }
 }
 
