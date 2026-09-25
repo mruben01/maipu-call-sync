@@ -10,6 +10,10 @@ fun String.asBuildConfigString(): String =
 val supabaseUrl = providers.environmentVariable("SUPABASE_URL").orElse("").get()
 val supabasePublishableKey =
     providers.environmentVariable("SUPABASE_PUBLISHABLE_KEY").orElse("").get()
+val releaseKeystorePath =
+    providers.environmentVariable("MAIPU_SIGNING_KEYSTORE_FILE").orNull?.takeIf { it.isNotBlank() }
+val releaseSigningPassword =
+    providers.environmentVariable("MAIPU_SIGNING_PASSWORD").orNull?.takeIf { it.isNotBlank() }
 
 android {
     namespace = "com.maipu.callsync"
@@ -19,8 +23,8 @@ android {
         applicationId = "com.maipu.callsync"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "3.0.0"
         buildConfigField("String", "SUPABASE_URL", supabaseUrl.asBuildConfigString())
         buildConfigField(
             "String",
@@ -29,9 +33,22 @@ android {
         )
     }
 
+    signingConfigs {
+        if (releaseKeystorePath != null && releaseSigningPassword != null) {
+            create("maipuRelease") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseSigningPassword
+                keyAlias = "maipu-call-sync-release"
+                keyPassword = releaseSigningPassword
+                storeType = "PKCS12"
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfigs.findByName("maipuRelease")?.let { signingConfig = it }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -57,6 +74,19 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
+}
+
+// Local release builds must fail rather than silently producing an unsigned APK.
+// Debug builds and unit tests remain usable without signing secrets.
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
+    doFirst {
+        if (releaseKeystorePath == null ||
+            releaseSigningPassword == null ||
+            !file(releaseKeystorePath).isFile
+        ) {
+            throw GradleException("Falta la configuración de firma release de Maipú.")
         }
     }
 }

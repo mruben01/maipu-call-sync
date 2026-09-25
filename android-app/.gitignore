@@ -4,3 +4,17 @@ local.properties
 *.iml
 .idea/
 app/build/
+# Signing material must remain outside the repository.
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+*.asc
+*.b64
+*.base64
+*keystore*.b64
+*keystore*.base64
+signing.properties
+keystore.properties

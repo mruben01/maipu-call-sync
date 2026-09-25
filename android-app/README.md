@@ -93,7 +93,8 @@ la prueba física descrita abajo.
 1. Copiar o abrir la carpeta `android-app/` en Android Studio.
 2. Esperar la sincronización de Gradle.
 3. Si Android Studio solicita instalar componentes del SDK, aceptarlos.
-4. Seleccionar la variante `debug`.
+4. Seleccionar la variante `debug` **solo para desarrollo**, nunca como APK
+   oficial distribuible a los vendedores.
 5. Ejecutar `app` para instalarla en un dispositivo conectado, o usar
    **Build > Build Bundle(s) / APK(s) > Build APK(s)**.
 
@@ -108,6 +109,129 @@ cd android-app
 El Wrapper está fijado a Gradle 8.9 en
 `gradle/wrapper/gradle-wrapper.properties`. En el primer uso descarga esa
 versión automáticamente.
+
+## Firma persistente de la APK oficial
+
+**Estado:** la configuración está preparada, pero todavía NO se generó la
+keystore de Maipú ni una APK release oficial. Solo Maipú debe generar y
+custodiar la clave fuera del repositorio. Un push a `main` ejecuta las pruebas
+Android, **no** intenta compilar ni publicar un release. El release se ejecuta
+únicamente con **Run workflow** desde `main`, tras la aprobación del
+Environment protegido `android-signing`.
+
+La APK oficial conserva `applicationId = com.maipu.callsync`, comienza con
+`versionCode = 2`, `versionName = 3.0.0` y usa el alias fijo
+`maipu-call-sync-release`. En cada versión posterior se incrementa
+`versionCode` (3, 4, ...); `versionName` puede avanzar de forma legible, por
+ejemplo `3.0.1`. No distribuir APKs debug a estos teléfonos después de la
+primera migración: cada firma debug puede ser distinta. La keystore permanente
+debe conservarse para **todas** las versiones oficiales siguientes.
+
+### Preparación en una PC Windows de confianza
+
+1. Usar una PC controlada por Maipú. Instalar JDK 17 (o usar el JDK 17 de
+   Android Studio) y abrir **PowerShell**. Confirmar que `keytool` responde con
+   `keytool -help`. **No escribir nunca una contraseña dentro de un comando**:
+   `keytool` la pedirá de forma interactiva.
+2. Crear una carpeta **fuera del clon del repositorio**, por ejemplo
+   `Documentos\MaipuFirma`, y elegir allí la ruta
+   `maipu-call-sync-release.p12`. Si el archivo ya existe, **no volver a
+   ejecutar el comando de generación**: regenerarlo crearía otra identidad
+   imposible de usar para actualizar las APK ya instaladas.
+3. En PowerShell, ajustar la ruta si se eligió otra carpeta y ejecutar:
+
+   ```powershell
+   $KeyDir = Join-Path $env:USERPROFILE 'Documents\MaipuFirma'
+   New-Item -ItemType Directory -Force -Path $KeyDir | Out-Null
+   $KeyPath = Join-Path $KeyDir 'maipu-call-sync-release.p12'
+   if (Test-Path $KeyPath) { throw 'La keystore ya existe: no la reemplaces.' }
+   keytool -genkeypair -keystore $KeyPath -storetype PKCS12 `
+     -alias maipu-call-sync-release -keyalg RSA -keysize 3072 `
+     -sigalg SHA256withRSA -validity 10950
+   ```
+
+   Elegir una contraseña larga y única, guardarla en el gestor de contraseñas
+   de la organización y responder las preguntas de identidad del certificado.
+   Para este archivo PKCS#12 el build utiliza la misma contraseña para el
+   almacén y la clave. **No compartirla por chat, correo ni tickets.**
+   `Test-Path $KeyPath` debe devolver `True`: esa es la ubicación del original.
+4. Obtener la **huella pública** del certificado:
+
+   ```powershell
+   keytool -list -v -keystore $KeyPath -storetype PKCS12 `
+     -alias maipu-call-sync-release
+   ```
+
+   Identificar la línea `SHA256:` (64 caracteres hexadecimales, posiblemente
+   separados por `:`). Anotarla como referencia aprobada. Es la huella del
+   **certificado**, distinta del hash del archivo `.p12` y distinta de la
+   huella del token de monitoreo mostrada por la app. No copiar ninguna clave
+   ni contraseña a la documentación.
+5. Hacer **antes del primer release** dos copias cifradas de la keystore fuera
+   de GitHub, en custodias independientes. Guardar la contraseña por separado
+   en el gestor de contraseñas. Desde una copia, ejecutar el mismo
+   `keytool -list -v -keystore <ruta-de-la-copia> -storetype PKCS12 -alias
+   maipu-call-sync-release` y comparar la línea `SHA256:` con el original.
+   Repetir esta restauración de prueba periódicamente. Perder la clave privada
+   impediría actualizar las instalaciones oficiales.
+
+### Environment y secretos de GitHub
+
+6. En el repositorio **mruben01/maipu-call-sync**, ir a **Settings →
+   Environments → New environment** y llamarlo exactamente
+   `android-signing`. Restringirlo a la rama `main` y configurar revisores
+   obligatorios de confianza. Si el plan o los permisos de GitHub no permiten
+   esas protecciones, **detenerse antes de la primera publicación**.
+7. Dentro de ese Environment, crear **Environment secrets** con estos nombres:
+
+   - `MAIPU_SIGNING_KEYSTORE_B64`: representación Base64 completa del `.p12`.
+   - `MAIPU_SIGNING_PASSWORD`: contraseña única guardada en el gestor.
+
+   Para copiar el Base64 al portapapeles en la PC, sin imprimirlo ni guardarlo
+   en un `.txt`, ejecutar en PowerShell con `$KeyPath` definido como arriba:
+
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes($KeyPath)) | Set-Clipboard
+   ```
+
+   Desactivar temporalmente el historial y la sincronización del portapapeles
+   de Windows; pegar **solo** en el campo Value del secreto correspondiente,
+   guardar y vaciar el portapapeles (`Set-Clipboard -Value ' '`). No pegarlo
+   en la terminal, un chat ni un issue. Introducir la contraseña directamente
+   desde el gestor en el segundo secreto. Nunca añadir `.p12`, Base64 ni
+   contraseñas al repositorio.
+8. Crear la **Environment variable** (no secreto)
+   `MAIPU_SIGNING_CERT_SHA256` con la huella pública de `SHA256:` obtenida en
+   el paso 4. Se aceptan letras hexadecimales y `:`. El workflow **falla**
+   si esta variable falta o si la APK usa otro certificado. Los secretos
+   `SUPABASE_URL` y `SUPABASE_PUBLISHABLE_KEY` existentes deben estar
+   disponibles para el build; **nunca** agregar `service_role` a GitHub.
+
+### Primer build y comprobación de continuidad
+
+9. Ir a **Actions → Build Android → Run workflow**, elegir `main` y ejecutar.
+   Primero deben pasar las pruebas. Un revisor habilita el Environment
+   `android-signing`; recién entonces comienza el job release. Si faltan
+   secretos o la huella no coincide, el job falla y **no publica APK**.
+10. En el run exitoso, descargar el artifact `maipu-call-sync-release`,
+    descomprimirlo y buscar dentro **`maipu-call-sync.apk`**. El workflow
+    comprueba `com.maipu.callsync`, `versionCode 2`, `versionName 3.0.0` y
+    ejecuta `apksigner verify --verbose --print-certs`. Solo si la firma es
+    válida y su SHA-256 coincide con la huella aprobada sube el artifact.
+    **No distribuir** un `app-debug.apk` como sustituto.
+11. Como segunda compilación de prueba, usar nuevamente **Run workflow** en
+    el **mismo commit de `main`**, sin cambiar `versionCode`. Debe superar la
+    misma comparación de SHA-256 pública. También se pueden descargar ambas
+    APK y ejecutar `apksigner verify --print-certs` sobre cada una en una PC
+    con Android SDK: el `Signer #1 certificate SHA-256 digest` debe ser
+    idéntico. Los hash SHA-256 de los **archivos APK** pueden diferir sin que
+    cambie el certificado; no son la prueba de identidad de firma. Para la
+    siguiente versión distribuida, incrementar `versionCode`.
+
+El runner reconstruye el `.p12` en su directorio temporal con permisos
+restringidos, no lo incluye en el artifact y lo elimina al terminar. Gradle
+rechaza `assembleRelease` si falta el archivo o la contraseña. El contenido
+del archivo y las contraseñas no se imprimen en logs.
 
 ## Configuración de Supabase
 
@@ -361,27 +485,62 @@ cuando Android la proporciona.
 ## V3: alta de los dos Samsung del piloto
 
 El monitoreo es **independiente** de la sincronización de audios ya validada.
-La nueva APK sigue usando el mismo proyecto de Supabase y el `device_id` que
-genera la instalación existente. Antes de instalarla, aplicar la migración
-`supabase/migrations/20260925000000_device_monitoring_v3.sql` y desplegar
-`monitor-report` con autenticación propia (verificación JWT de la puerta de
-Edge Functions desactivada **solo** para esta función; la función verifica el
-secreto de cada teléfono). Su clave de servicio queda exclusivamente en
-Supabase; nunca se copia a los teléfonos.
+La nueva APK usa el mismo proyecto de Supabase. La migración
+`supabase/migrations/20260925000000_device_monitoring_v3.sql` y la función
+`monitor-report` ya forman parte de V3; la función verifica el secreto propio
+de cada teléfono. Su clave de servicio queda exclusivamente en Supabase.
 
-1. Instalar la nueva APK **sobre la versión existente**, sin borrar datos de
-   la aplicación. Esto conserva el `device_id` y los estados locales. Abrir la
-   app en el **teléfono A**. La sincronización de audios no depende de completar
-   el alta de monitoreo.
-2. En la configuración inicial de A ingresar nombre y apellido del vendedor A
-   y la línea corporativa A. Revisar cuidadosamente: la identidad queda
-   bloqueada frente a cambios accidentales. Anotar o copiar **device_id** y
-   **huella SHA-256 de monitoreo** desde la tarjeta «Pendiente de vinculación».
-   Esa huella **no es** el secreto del teléfono. No solicitar, copiar ni
-   transmitir el secreto bruto: la aplicación nunca lo muestra.
-3. Repetir el paso anterior en el **teléfono B**, con vendedor y línea B.
+**Migración controlada, una sola vez, para los dos Samsung actuales:**
+
+1. **No empezar hasta tener una APK release oficial firmada y verificada.**
+   En la versión instalada, comprobar que hay **0 llamadas pendientes y
+   0 errores**, revisar la última sincronización exitosa y confirmar
+   centralmente las grabaciones esperadas. Si hay algo pendiente o dudoso,
+   detenerse antes de desinstalar. Anotar el `device_id` anterior cuando esté
+   disponible para distinguirlo del nuevo en soporte.
+2. Desinstalar la versión anterior **solo después** de esa comprobación.
+   `allowBackup=false`: la desinstalación borra datos y estado local, incluida
+   la identidad y la credencial de monitoreo. Las grabaciones de Samsung
+   accesibles en MediaStore deben verificarse nuevamente; no asumir que los
+   estados de sincronización locales se conservarán.
+3. Instalar `maipu-call-sync.apk`, no `app-debug.apk`. Abrirla y otorgar
+   los permisos de audio solicitados. Confirmar que la grabación nativa de
+   llamadas Samsung sigue habilitada y que la app detecta las grabaciones.
+   **No instalar un debug sobre esta versión oficial:** cambiaría la firma.
+4. En el **teléfono A**, ingresar el vendedor y la línea corporativa. La
+   instalación nueva tendrá su propio `device_id` y huella de monitoreo.
+   Verificar ambos en «Pendiente de vinculación». Repetir en el **teléfono
+   B** con sus propios datos; comprobar que ambos identificadores difieren.
+5. El administrador da de alta las **nuevas** parejas en Supabase usando el
+   SQL y la comprobación de filas de abajo. Si existía un alta de monitoreo
+   de la instalación anterior, desactivarla/revocar su credencial
+   administrativamente, sin modificar los registros históricos. Confirmar
+   que cada app indica «Vinculado».
+6. Realizar **una llamada de prueba por teléfono**, verificar que Samsung
+   la graba, que la app la detecta y sincroniza, y comprobar audio y metadata
+   en Supabase. Verificar después un `last_heartbeat` nuevo para A y B.
+   WorkManager puede demorar: dos horas es un objetivo aproximado, no un
+   horario exacto.
+
+La desinstalación puede hacer que archivos de audio aún presentes vuelvan a
+evaluarse porque se pierde el estado local: antes y después del cambio revisar
+en Supabase que no se produzcan registros inesperados. **Solo esta primera
+migración de firma exige desinstalar; las futuras APK oficiales firmadas con
+la misma keystore y `versionCode` creciente se instalarán encima sin borrar
+datos.** La sincronización de audios no depende de completar el alta de
+monitoreo.
+
+**Datos de alta de la nueva instalación:**
+
+1. Abrir la app en el **teléfono A** y confirmar nombre y línea; la identidad
+   queda bloqueada frente a cambios accidentales. Anotar o copiar
+   **device_id** y **huella SHA-256 de monitoreo** desde la tarjeta
+   «Pendiente de vinculación». Esa huella **no es** el secreto del teléfono
+   ni la huella pública del certificado de firma Android. No solicitar,
+   copiar ni transmitir el secreto bruto: la aplicación nunca lo muestra.
+2. Repetir el paso anterior en el **teléfono B**, con vendedor y línea B.
    Comprobar que el `device_id` y la huella son distintos de los de A.
-4. Un administrador autorizado entra en el **SQL Editor del mismo proyecto de
+3. Un administrador autorizado entra en el **SQL Editor del mismo proyecto de
    Supabase** y registra cada asociación. Sustituir los campos entre `<...>`
    por lo copiado de la pantalla. La línea debe coincidir exactamente con lo
    ingresado en el teléfono, incluidos espacios o prefijos. **No ingresar
@@ -405,7 +564,7 @@ Supabase; nunca se copia a los teléfonos.
    Nunca reutilizar una misma huella entre instalaciones. Las tablas nuevas
    no permiten escritura directa de la APK: solo la función central acepta
    reportes que acrediten el secreto correspondiente a la huella registrada.
-5. Abrir nuevamente cada app con Internet. El reporte al abrir se limita para
+4. Abrir nuevamente cada app con Internet. El reporte al abrir se limita para
    no duplicar trabajo; WorkManager también intentará enviar el heartbeat
    aproximadamente cada dos horas, sin garantía de minuto exacto. Esperar a
    que cada teléfono muestre «Vinculado» y **verificar ambos en Supabase**:
