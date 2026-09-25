@@ -18,16 +18,28 @@ class CallRecordingSyncRepository(context: Context) {
     fun statesFor(recordings: List<CallRecording>): Map<String, SyncRecordState> =
         store.getStates(recordings.map(CallRecording::syncSourceKey))
 
-    fun sync(recording: CallRecording): SyncRecordState {
+    fun sync(recording: CallRecording): SyncRecordState =
+        syncWithOutcome(recording).state
+
+    fun syncWithOutcome(recording: CallRecording): SyncAttemptOutcome =
+        synchronized(SYNC_LOCK) {
+            syncLocked(recording)
+        }
+
+    private fun syncLocked(recording: CallRecording): SyncAttemptOutcome {
         val sourceKey = recording.syncSourceKey()
         var audioUploaded = false
         var failureMessage: String? = null
+        var retryable = false
         try {
             val existing = store.get(sourceKey)
             if (existing?.status == SyncStatus.SYNCED) {
-                return SyncRecordState(
-                    status = existing.status,
-                    attemptCount = existing.attemptCount,
+                return SyncAttemptOutcome(
+                    state = SyncRecordState(
+                        status = existing.status,
+                        attemptCount = existing.attemptCount,
+                    ),
+                    retryable = false,
                 )
             }
 
@@ -67,6 +79,7 @@ class CallRecordingSyncRepository(context: Context) {
         } catch (exception: SyncOperationException) {
             val message = exception.message ?: GENERIC_ERROR
             failureMessage = message
+            retryable = exception.retryable
             runCatching {
                 store.markFailed(sourceKey, message, audioUploaded)
             }
@@ -74,20 +87,24 @@ class CallRecordingSyncRepository(context: Context) {
             val message =
                 "Android no permitió leer la grabación. Revise el permiso de audio."
             failureMessage = message
+            retryable = false
             runCatching { store.markFailed(sourceKey, message, audioUploaded) }
         } catch (_: IOException) {
             val message = "No se pudo leer o transferir el archivo. Puede reintentar."
             failureMessage = message
+            retryable = true
             runCatching { store.markFailed(sourceKey, message, audioUploaded) }
         } catch (_: Exception) {
             failureMessage = GENERIC_ERROR
+            retryable = true
             runCatching { store.markFailed(sourceKey, GENERIC_ERROR, audioUploaded) }
         }
 
-        return runCatching { store.getState(sourceKey) }.getOrNull() ?: SyncRecordState(
+        val state = runCatching { store.getState(sourceKey) }.getOrNull() ?: SyncRecordState(
             status = SyncStatus.FAILED,
             lastError = failureMessage ?: GENERIC_ERROR,
         )
+        return SyncAttemptOutcome(state = state, retryable = retryable)
     }
 
     private fun CallRecording.toMetadata(deviceId: String): CallRecordingMetadata {
@@ -119,5 +136,6 @@ class CallRecordingSyncRepository(context: Context) {
 
     private companion object {
         const val GENERIC_ERROR = "No se pudo completar la sincronización. Puede reintentar."
+        val SYNC_LOCK = Any()
     }
 }

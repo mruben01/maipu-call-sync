@@ -3,8 +3,8 @@
 Esta carpeta contiene el proyecto Android nativo de la prueba de concepto.
 La aplicación **no graba llamadas** ni usa VoIP/SIP. Consulta `MediaStore.Audio`
 para detectar grabaciones `.m4a` de Samsung Phone, las reproduce mediante su
-`Content URI` y permite subirlas manualmente a Supabase sin moverlas ni
-eliminarlas.
+`Content URI` y las sincroniza automáticamente con Supabase sin moverlas ni
+eliminarlas. También conserva la sincronización manual.
 
 ## Alcance implementado
 
@@ -14,7 +14,8 @@ eliminarlas.
 - Compatibilidad con `READ_EXTERNAL_STORAGE` en Android 12 o anterior.
 - Consulta oficial de `MediaStore.Audio.Media`.
 - Filtro por archivos `.m4a`/audio MP4 dentro de `Recordings/`.
-- Preferencia por `Recordings/Call/`, indicada en el diagnóstico.
+- Sincronización automática acotada a `Recordings/Call/`, indicada en el
+  diagnóstico.
 - Metadata: nombre, fecha, tamaño, duración, MIME type, ruta relativa y
   `Content URI`.
 - Parser independiente del nombre observado en Samsung:
@@ -27,7 +28,13 @@ eliminarlas.
   copia temporal completa.
 - Identificador aleatorio por instalación y estado local de sincronización,
   reintentos y errores.
-- No contiene WorkManager ni sincronización automática en segundo plano.
+- WorkManager ejecuta la sincronización en segundo plano con conectividad,
+  escaneo periódico cada 15 minutos y reintentos con backoff.
+- Un observador de MediaStore adelanta el escaneo mientras el proceso está
+  activo. El audio debe mantener tamaño y fecha sin cambios durante dos minutos.
+- WorkManager restaura el trabajo programado después de reiniciar el teléfono.
+- Cada ejecución procesa como máximo dos grabaciones listas y encadena el resto
+  para no agotar el tiempo disponible de ejecución en segundo plano.
 - No incluye autenticación corporativa, TIMM, WISE, Power BI, transcripción,
   IA, publicidad ni trackers.
 
@@ -236,12 +243,31 @@ ni rutas físicas absolutas.
 11. Confirmar en la app el estado **Sincronizada** y verificar que el objeto y
     la fila correspondiente aparezcan en Supabase.
 
-Los fallos quedan guardados localmente con un mensaje seguro para mostrar y un
-contador de intentos. Si la subida de audio ya fue confirmada pero falla la
-inserción de metadatos, el botón de reintento vuelve a insertar los metadatos
-sin volver a transmitir el audio. El campo remoto `sync_status` se inserta como
-`synced` solo después de completar ambas operaciones; los errores se conservan
-localmente porque la tabla actual no tiene una columna de error.
+La primera apertura sigue siendo necesaria para conceder el permiso de audio.
+Luego, el proceso automático no requiere abrir la aplicación ni pulsar el
+botón de sincronización. WorkManager espera conectividad, reintenta errores
+transitorios y conserva el trabajo pendiente después de reiniciar. Los
+rechazos permanentes se reevalúan como máximo una vez por hora; el botón
+manual siempre permite reintentarlos de inmediato. El escaneo
+periódico recupera eventos perdidos si Android no entrega una notificación de
+MediaStore. Android y las optimizaciones de batería de Samsung pueden demorar
+la ejecución; los 15 minutos son un intervalo mínimo, no una garantía de
+tiempo real.
+
+Los fallos quedan guardados localmente con un mensaje y contador de intentos.
+Si la subida de audio ya fue confirmada pero falla la inserción de metadatos,
+el reintento automático y el botón manual vuelven a insertar solo los
+metadatos. El estado local `SYNCED` evita volver a subir grabaciones
+completadas. El campo remoto `sync_status` se inserta como `synced` solo
+después de completar ambas operaciones; los errores se conservan localmente
+porque la tabla actual no tiene una columna de error.
+
+**Limitación a validar en el piloto:** el objeto remoto se identifica por el
+SHA-256 del audio. Si dos llamadas distintas producen bytes exactamente
+iguales, la restricción única de `storage_path` solo permite una fila remota;
+el conflicto actual se interpreta como existente. Resolver esa ambigüedad
+requiere cambiar la identidad de Storage o la restricción remota y queda
+fuera de esta actualización.
 
 El resultado exitoso responde que, en ese modelo/configuración, la aplicación
 puede detectar y leer las grabaciones expuestas por Samsung Phone. Si el

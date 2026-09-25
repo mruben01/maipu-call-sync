@@ -6,11 +6,15 @@ import android.content.Context
 import android.os.Build
 import android.provider.MediaStore
 import com.maipu.callsync.domain.CallFileNameParser
+import com.maipu.callsync.domain.isCallRecordingPath
 
 class CallRecordingRepository(context: Context) {
     private val resolver: ContentResolver = context.applicationContext.contentResolver
 
-    fun findRecordings(permissionGranted: Boolean): QueryResult {
+    fun findRecordings(
+        permissionGranted: Boolean,
+        callFolderOnly: Boolean = false,
+    ): QueryResult {
         if (!permissionGranted) {
             return QueryResult(
                 recordings = emptyList(),
@@ -28,6 +32,8 @@ class CallRecordingRepository(context: Context) {
             add(MediaStore.Audio.Media.MIME_TYPE)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 add(MediaStore.MediaColumns.RELATIVE_PATH)
+            } else {
+                add(MediaStore.Audio.Media.DATA)
             }
         }
 
@@ -65,6 +71,7 @@ class CallRecordingRepository(context: Context) {
                 val relativePathColumn = cursor.getColumnIndex(
                     MediaStore.MediaColumns.RELATIVE_PATH,
                 )
+                val legacyPathColumn = cursor.getColumnIndex(MediaStore.Audio.Media.DATA)
 
                 while (cursor.moveToNext()) {
                     totalAudioCount += 1
@@ -72,6 +79,8 @@ class CallRecordingRepository(context: Context) {
                     val displayName = cursor.getString(nameColumn).orEmpty()
                     val relativePath = relativePathColumn.takeIf { it >= 0 }
                         ?.let { cursor.getString(it) }
+                        ?: legacyPathColumn.takeIf { it >= 0 }
+                            ?.let { cursor.getString(it)?.substringBeforeLast('/', "") }
                     val mimeType = mimeColumn.takeIf { it >= 0 }
                         ?.let { cursor.getString(it) }
 
@@ -84,9 +93,7 @@ class CallRecordingRepository(context: Context) {
                     val inRecordings = pathParts.any {
                         it.equals("Recordings", ignoreCase = true)
                     }
-                    val inCallFolder = inRecordings && pathParts.any {
-                        it.equals("Call", ignoreCase = true)
-                    }
+                    val inCallFolder = isCallRecordingPath(relativePath)
 
                     if (inRecordings) recordingsCount += 1
                     if (inCallFolder) callRecordingsCount += 1
@@ -94,7 +101,9 @@ class CallRecordingRepository(context: Context) {
                     val supportedMime = mimeType.equals("audio/mp4", true) ||
                         mimeType.equals("audio/m4a", true) ||
                         displayName.endsWith(".m4a", ignoreCase = true)
-                    if (!inRecordings || !supportedMime) continue
+                    if (!inRecordings || (callFolderOnly && !inCallFolder) || !supportedMime) {
+                        continue
+                    }
 
                     recordings += CallRecording(
                         id = id,

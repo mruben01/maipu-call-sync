@@ -109,13 +109,20 @@ class SupabaseCallRecordingClient(context: Context) {
             throw SyncOperationException(
                 "La APK no recibió SUPABASE_URL y SUPABASE_PUBLISHABLE_KEY " +
                     "durante la compilación.",
+                retryable = false,
             )
         }
 
         val baseUrl = projectUrl.toHttpUrlOrNull()
-            ?: throw SyncOperationException("SUPABASE_URL no tiene un formato válido.")
+            ?: throw SyncOperationException(
+                "SUPABASE_URL no tiene un formato válido.",
+                retryable = false,
+            )
         if (!baseUrl.isHttps) {
-            throw SyncOperationException("Supabase debe configurarse con HTTPS.")
+            throw SyncOperationException(
+                "Supabase debe configurarse con HTTPS.",
+                retryable = false,
+            )
         }
         return pathSegments.fold(baseUrl.newBuilder()) { builder, segment ->
             builder.addPathSegment(segment)
@@ -145,6 +152,7 @@ class SupabaseCallRecordingClient(context: Context) {
         } catch (_: SecurityException) {
             throw SyncOperationException(
                 "Android no permitió leer la grabación. Revise el permiso de audio.",
+                retryable = false,
             )
         } catch (_: IOException) {
             throw SyncOperationException(
@@ -162,11 +170,13 @@ class SupabaseCallRecordingClient(context: Context) {
             return SyncOperationException(
                 "Supabase rechazó la subida (HTTP $statusCode). " +
                     "Revise la policy INSERT del bucket.",
+                retryable = false,
             )
         }
         if (statusCode == 413) {
             return SyncOperationException(
                 "Supabase rechazó el archivo por su tamaño (HTTP 413).",
+                retryable = false,
             )
         }
         return apiError("subida de audio", statusCode)
@@ -184,6 +194,7 @@ class SupabaseCallRecordingClient(context: Context) {
                         "Puede reintentar."
                 else -> "Falló la $operation en Supabase (HTTP $statusCode)."
             },
+            retryable = statusCode == 429 || statusCode in 500..599,
         )
 
     private fun postgrestError(
@@ -211,6 +222,7 @@ class SupabaseCallRecordingClient(context: Context) {
                 appendLine("Cuerpo completo de PostgREST:")
                 append(completeBody)
             },
+            retryable = statusCode == 429 || statusCode in 500..599,
         )
     }
 
@@ -262,7 +274,10 @@ class SupabaseCallRecordingClient(context: Context) {
     }
 }
 
-class SyncOperationException(message: String) : IOException(message)
+class SyncOperationException(
+    message: String,
+    val retryable: Boolean = true,
+) : IOException(message)
 
 internal fun isExistingMetadataConflict(statusCode: Int, responseBody: String): Boolean {
     if (statusCode != 409) return false

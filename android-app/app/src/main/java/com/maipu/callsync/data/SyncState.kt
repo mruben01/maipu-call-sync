@@ -14,6 +14,11 @@ data class SyncRecordState(
     val lastError: String? = null,
 )
 
+data class SyncAttemptOutcome(
+    val state: SyncRecordState,
+    val retryable: Boolean,
+)
+
 data class CallRecordingMetadata(
     val phoneNumber: String?,
     val callDatetime: String?,

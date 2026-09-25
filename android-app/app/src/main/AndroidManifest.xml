@@ -12,6 +12,7 @@
         android:maxSdkVersion="32" />
 
     <application
+        android:name=".CallSyncApplication"
         android:allowBackup="false"
         android:label="Maipú Call Sync"
         android:supportsRtl="true"
