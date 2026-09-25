@@ -11,6 +11,7 @@ internal enum class DashboardStatus {
 }
 
 internal data class DashboardCounts(
+    val total: Int,
     val synced: Int,
     val pending: Int,
     val errors: Int,
@@ -55,7 +56,12 @@ internal fun summarizeDashboard(
     }
     return DashboardSnapshot(
         status = status,
-        counts = DashboardCounts(synced, pending, errors),
+        counts = DashboardCounts(callStates.size, synced, pending, errors),
         lastSuccessfulSyncAtMillis = lastSuccessfulSync,
     )
+}
+
+internal fun dashboardPercentage(count: Int?, total: Int?): String? {
+    if (count == null || total == null || total <= 0) return null
+    return String.format(java.util.Locale("es", "AR"), "%.1f%%", count * 100.0 / total)
 }

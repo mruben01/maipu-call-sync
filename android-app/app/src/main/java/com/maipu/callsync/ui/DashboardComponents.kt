@@ -1,6 +1,7 @@
 package com.maipu.callsync.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,9 +25,11 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.maipu.callsync.R
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -47,19 +50,29 @@ internal object PilotColors {
 
 @Composable
 internal fun DashboardHeader() {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = "MUNDO MAIPÚ  /  HERRAMIENTA INTERNA",
-            style = MaterialTheme.typography.labelSmall,
-            color = PilotColors.accent,
-            fontWeight = FontWeight.Bold,
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.maipu_mark),
+            contentDescription = "M de Maipú",
+            modifier = Modifier.size(58.dp),
         )
-        Text(
-            text = "Maipú Call Sync",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = PilotColors.ink,
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = "MUNDO MAIPÚ  /  HERRAMIENTA INTERNA",
+                style = MaterialTheme.typography.labelSmall,
+                color = PilotColors.accent,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = "Maipú Call Sync",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = PilotColors.ink,
+            )
+        }
     }
 }
 
@@ -227,21 +240,53 @@ internal fun MetricsCard(counts: DashboardCounts?) {
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 22.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
+                .padding(horizontal = 12.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Metric(counts?.synced, "Sincronizadas", PilotColors.success, Modifier.weight(1f))
-            Metric(counts?.pending, "Pendientes", PilotColors.pending, Modifier.weight(1f))
-            Metric(counts?.errors, "Con error", PilotColors.error, Modifier.weight(1f))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = "Llamadas",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = PilotColors.ink,
+                )
+                Text(
+                    text = counts?.total?.toString() ?: "—",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = PilotColors.ink,
+                )
+            }
+            HorizontalDivider(color = PilotColors.border)
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Metric(
+                    counts?.synced, counts?.total, "Sincronizadas",
+                    PilotColors.success, Modifier.weight(1f),
+                )
+                Metric(
+                    counts?.pending, counts?.total, "Pendientes",
+                    PilotColors.pending, Modifier.weight(1f),
+                )
+                Metric(
+                    counts?.errors, counts?.total, "Con error",
+                    PilotColors.error, Modifier.weight(1f),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun Metric(count: Int?, title: String, tint: Color, modifier: Modifier) {
+private fun Metric(count: Int?, total: Int?, title: String, tint: Color, modifier: Modifier) {
     Column(
         modifier = modifier.padding(horizontal = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -259,6 +304,11 @@ private fun Metric(count: Int?, title: String, tint: Color, modifier: Modifier) 
             color = PilotColors.muted,
             textAlign = TextAlign.Center,
             maxLines = 2,
+        )
+        Text(
+            text = dashboardPercentage(count, total) ?: "—",
+            style = MaterialTheme.typography.labelMedium,
+            color = PilotColors.muted,
         )
     }
 }

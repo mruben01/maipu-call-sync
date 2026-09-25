@@ -133,7 +133,7 @@ fun CallSyncScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "Tus llamadas",
+                            text = "Últimas llamadas",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = PilotColors.ink,

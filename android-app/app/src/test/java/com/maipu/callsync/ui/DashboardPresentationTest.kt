@@ -25,7 +25,12 @@ class DashboardPresentationTest {
         )
 
         assertEquals(DashboardStatus.ATTENTION, result.status)
-        assertEquals(DashboardCounts(synced = 1, pending = 3, errors = 2), result.counts)
+        assertEquals(DashboardCounts(total = 6, synced = 1, pending = 3, errors = 2), result.counts)
+        assertEquals(
+            result.counts?.total,
+            result.counts?.let { it.synced + it.pending + it.errors },
+        )
+        assertEquals("16,7%", dashboardPercentage(result.counts?.synced, result.counts?.total))
         assertEquals(1_700_000_000_000L, result.lastSuccessfulSyncAtMillis)
     }
 
@@ -42,6 +47,7 @@ class DashboardPresentationTest {
         assertEquals(DashboardStatus.CHECKING, result.status)
         assertNull(result.counts)
         assertNull(result.lastSuccessfulSyncAtMillis)
+        assertNull(dashboardPercentage(result.counts?.synced, result.counts?.total))
     }
 
     @Test
@@ -56,6 +62,7 @@ class DashboardPresentationTest {
             )
             assertEquals(DashboardStatus.ATTENTION, result.status)
             assertNull(result.counts)
+            assertNull(dashboardPercentage(result.counts?.synced, result.counts?.total))
         }
     }
 
@@ -70,6 +77,7 @@ class DashboardPresentationTest {
         )
 
         assertEquals(DashboardStatus.ACTIVE, result.status)
-        assertEquals(DashboardCounts(0, 0, 0), result.counts)
+        assertEquals(DashboardCounts(0, 0, 0, 0), result.counts)
+        assertNull(dashboardPercentage(result.counts?.synced, result.counts?.total))
     }
 }

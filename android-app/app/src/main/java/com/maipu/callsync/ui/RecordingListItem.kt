@@ -76,7 +76,8 @@ internal fun RecordingListItem(
         syncState.status == SyncStatus.SYNCED -> PilotColors.successSurface
         else -> PilotColors.pendingSurface
     }
-    val date = recording.parsedFileName?.parsedDate
+    val callDate = recording.parsedFileName?.parsedDate
+    val date = callDate
         ?: recording.dateModifiedSeconds?.let { Date(it * 1_000L) }
         ?: recording.dateAddedSeconds?.let { Date(it * 1_000L) }
 
@@ -100,22 +101,12 @@ internal fun RecordingListItem(
                 ) {
                     Text(
                         text = recording.parsedFileName?.phoneNumber
-                            ?: "Grabación de llamada",
+                            ?: "Número no disponible",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = PilotColors.ink,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = date?.let {
-                            SimpleDateFormat(
-                                "dd MMM · HH:mm",
-                                Locale("es", "AR"),
-                            ).format(it)
-                        } ?: "Fecha no disponible",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = PilotColors.muted,
                     )
                 }
                 Surface(
@@ -131,6 +122,22 @@ internal fun RecordingListItem(
                     )
                 }
             }
+            Text(
+                text = date?.let {
+                    val formatted = SimpleDateFormat(
+                        "dd MMM yyyy · HH:mm",
+                        Locale("es", "AR"),
+                    ).format(it)
+                    if (callDate != null) formatted else "Fecha de archivo: $formatted"
+                } ?: "Fecha no disponible",
+                style = MaterialTheme.typography.bodySmall,
+                color = PilotColors.muted,
+            )
+            Text(
+                text = "Duración: ${formatDuration(recording.durationMs)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = PilotColors.muted,
+            )
             if (!isAutomaticCall) {
                 Text(
                     text = "Fuera del respaldo automático",
