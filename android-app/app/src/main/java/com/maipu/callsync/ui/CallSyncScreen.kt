@@ -1,49 +1,43 @@
 package com.maipu.callsync.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.maipu.callsync.audio.PlaybackState
 import com.maipu.callsync.data.CallRecording
+import com.maipu.callsync.data.DiagnosticReport
 import com.maipu.callsync.data.SyncRecordState
 import com.maipu.callsync.data.SyncStatus
 import com.maipu.callsync.data.syncSourceKey
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.maipu.callsync.domain.isCallRecordingPath
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CallSyncScreen(
     state: CallSyncUiState,
@@ -53,449 +47,270 @@ fun CallSyncScreen(
     onSync: (CallRecording) -> Unit,
     onSyncPending: () -> Unit,
 ) {
-    val pendingSyncCount = state.recordings.count { recording ->
+    val calls = state.recordings.filter { isCallRecordingPath(it.relativePath) }
+    val otherRecordings = state.recordings.filterNot { isCallRecordingPath(it.relativePath) }
+    val callStates = calls.map { recording ->
+        state.syncStatuses[recording.syncSourceKey()] ?: SyncRecordState()
+    }
+    val snapshot = summarizeDashboard(
+        callStates = callStates,
+        permissionGranted = state.permissionGranted,
+        hasScanned = state.hasScanned,
+        hasQueryError = state.diagnostics.errors.isNotEmpty() ||
+            (state.errorMessage != null && !state.hasScanned),
+        hasScreenError = state.errorMessage != null,
+    )
+    val manualPendingCount = state.recordings.count { recording ->
         state.syncStatuses[recording.syncSourceKey()]?.status != SyncStatus.SYNCED
     }
+    var showAllCalls by rememberSaveable { mutableStateOf(false) }
+    var showOtherRecordings by rememberSaveable { mutableStateOf(false) }
+    val visibleCalls = if (showAllCalls) calls else calls.take(3)
 
-    MaterialTheme {
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = {
-                        Text(
-                            text = "MAIPÚ CALL SYNC",
-                            fontWeight = FontWeight.Bold,
-                        )
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    ),
-                )
-            },
-        ) { innerPadding ->
+    MaterialTheme(
+        colorScheme = lightColorScheme(
+            primary = PilotColors.accent,
+            onPrimary = Color.White,
+            background = PilotColors.background,
+            onBackground = PilotColors.ink,
+            surface = Color.White,
+            onSurface = PilotColors.ink,
+            error = PilotColors.error,
+        ),
+    ) {
+        Scaffold(containerColor = PilotColors.background) { innerPadding ->
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding)
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(innerPadding),
+                contentPadding = PaddingValues(
+                    start = 18.dp,
+                    top = 24.dp,
+                    end = 18.dp,
+                    bottom = 32.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
+                item { DashboardHeader() }
                 item {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    DeviceSummary(state)
-                }
-                item {
-                    PermissionPanel(
+                    StatusHero(
+                        snapshot = snapshot,
                         permissionGranted = state.permissionGranted,
+                        isSyncing = state.isSyncing,
                         onRequestPermission = onRequestPermission,
                     )
                 }
+                item { MetricsCard(snapshot.counts) }
                 item {
-                    SearchPanel(
-                        count = state.recordings.size,
-                        isLoading = state.isLoading,
-                        pendingSyncCount = pendingSyncCount,
-                        isSyncing = state.isSyncing,
-                        onScan = onScan,
-                        onSyncPending = onSyncPending,
+                    InformationCard(
+                        snapshot = snapshot,
+                        manufacturer = state.diagnostics.manufacturer,
+                        model = state.diagnostics.model,
+                        androidVersion = state.diagnostics.androidVersion,
                     )
+                }
+                item {
+                    OutlinedButton(
+                        onClick = onSyncPending,
+                        enabled = state.permissionGranted && state.hasScanned &&
+                            !state.isSyncing && manualPendingCount > 0,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, PilotColors.accent),
+                    ) {
+                        Text(if (state.isSyncing) "Sincronizando..." else "Sincronizar ahora")
+                    }
                 }
                 state.errorMessage?.let { message ->
-                    item { ErrorPanel(message) }
+                    item { ErrorNotice(message) }
                 }
                 item {
-                    Text(
-                        text = "LISTADO",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                if (state.recordings.isEmpty()) {
-                    item {
-                        EmptyState(permissionGranted = state.permissionGranted)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "Tus llamadas",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = PilotColors.ink,
+                        )
+                        TextButton(
+                            onClick = onScan,
+                            enabled = state.permissionGranted && !state.isLoading,
+                        ) {
+                            Text(if (state.isLoading) "Actualizando..." else "Actualizar")
+                        }
                     }
-                } else {
-                    items(
-                        items = state.recordings,
-                        key = { it.contentUri.toString() },
-                    ) { recording ->
-                        RecordingCard(
-                            recording = recording,
-                            playbackState = state.playbackState,
-                            syncState = state.syncStatuses[recording.syncSourceKey()]
-                                ?: SyncRecordState(),
-                            isSyncing = state.isSyncing,
-                            isCurrentSync =
-                                state.syncingSourceKey == recording.syncSourceKey(),
-                            onPlay = { onPlay(recording) },
-                            onSync = { onSync(recording) },
+                }
+                if (!state.permissionGranted) {
+                    item { QuietMessage("Autorizá el acceso al audio para ver tus llamadas.") }
+                } else if (!state.hasScanned) {
+                    item {
+                        QuietMessage(
+                            if (state.isLoading) {
+                                "Comprobando las grabaciones del dispositivo..."
+                            } else {
+                                "No se pudieron cargar los datos. Tocá Actualizar para reintentar."
+                            },
                         )
                     }
-                }
-                item {
-                    DiagnosticPanel(state.diagnostics)
-                    Spacer(modifier = Modifier.height(24.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DeviceSummary(state: CallSyncUiState) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = "Dispositivo: ${state.diagnostics.manufacturer} " +
-                state.diagnostics.model,
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Text(
-            text = "Android: ${state.diagnostics.androidVersion}",
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text(
-                text = "Estado del permiso de audio:",
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            AssistChip(
-                onClick = {},
-                label = {
-                    Text(if (state.permissionGranted) "AUTORIZADO" else "NO AUTORIZADO")
-                },
-            )
-        }
-    }
-}
-
-@Composable
-private fun PermissionPanel(
-    permissionGranted: Boolean,
-    onRequestPermission: () -> Unit,
-) {
-    if (!permissionGranted) {
-        Card(
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.errorContainer,
-            ),
-        ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Text(
-                    text = "Se necesita acceso a audio",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = "Android debe autorizar la lectura de audio " +
-                        "expuesto por MediaStore.",
-                )
-                Button(onClick = onRequestPermission) {
-                    Text("AUTORIZAR ACCESO")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SearchPanel(
-    count: Int,
-    isLoading: Boolean,
-    pendingSyncCount: Int,
-    isSyncing: Boolean,
-    onScan: () -> Unit,
-    onSyncPending: () -> Unit,
-) {
-    Card {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Text(
-                text = "GRABACIONES ENCONTRADAS",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = "Grabaciones encontradas: $count",
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            Button(
-                onClick = onScan,
-                enabled = !isLoading,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (isLoading) "BUSCANDO..." else "BUSCAR GRABACIONES")
-            }
-            OutlinedButton(
-                onClick = onSyncPending,
-                enabled = !isSyncing && pendingSyncCount > 0,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    if (isSyncing) {
-                        "SINCRONIZANDO..."
+                } else {
+                    if (state.isLoading) {
+                        item {
+                            Text(
+                                text = "Actualizando datos...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = PilotColors.muted,
+                            )
+                        }
+                    }
+                    if (calls.isEmpty()) {
+                        item {
+                            QuietMessage(
+                                "Todavía no se detectaron llamadas grabadas para el " +
+                                    "respaldo automático.",
+                            )
+                        }
                     } else {
-                        "SINCRONIZAR PENDIENTES ($pendingSyncCount)"
-                    },
-                )
+                        items(visibleCalls, key = { it.contentUri.toString() }) { recording ->
+                            RecordingListItem(
+                                recording = recording,
+                                syncState = state.syncStatuses[recording.syncSourceKey()]
+                                    ?: SyncRecordState(),
+                                playbackState = state.playbackState,
+                                isSyncing = state.isSyncing,
+                                isCurrentSync =
+                                    state.syncingSourceKey == recording.syncSourceKey(),
+                                isAutomaticCall = true,
+                                onPlay = { onPlay(recording) },
+                                onSync = { onSync(recording) },
+                            )
+                        }
+                        if (calls.size > 3) {
+                            item {
+                                TextButton(onClick = { showAllCalls = !showAllCalls }) {
+                                    Text(
+                                        if (showAllCalls) {
+                                            "Ver menos"
+                                        } else {
+                                            "Ver todas las llamadas (${calls.size})"
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (otherRecordings.isNotEmpty()) {
+                        item {
+                            TextButton(
+                                onClick = { showOtherRecordings = !showOtherRecordings },
+                            ) {
+                                Text(
+                                    if (showOtherRecordings) {
+                                        "Ocultar otras grabaciones"
+                                    } else {
+                                        "Otras grabaciones (${otherRecordings.size})"
+                                    },
+                                )
+                            }
+                        }
+                        if (showOtherRecordings) {
+                            items(
+                                otherRecordings,
+                                key = { "other:${it.contentUri}" },
+                            ) { recording ->
+                                RecordingListItem(
+                                    recording = recording,
+                                    syncState = state.syncStatuses[recording.syncSourceKey()]
+                                        ?: SyncRecordState(),
+                                    playbackState = state.playbackState,
+                                    isSyncing = state.isSyncing,
+                                    isCurrentSync =
+                                        state.syncingSourceKey == recording.syncSourceKey(),
+                                    isAutomaticCall = false,
+                                    onPlay = { onPlay(recording) },
+                                    onSync = { onSync(recording) },
+                                )
+                            }
+                        }
+                    }
+                }
+                item { DiagnosticPanel(state.diagnostics) }
             }
         }
     }
 }
 
 @Composable
-private fun EmptyState(permissionGranted: Boolean) {
-    Card {
-        Text(
-            text = if (permissionGranted) {
-                "MediaStore no está exponiendo grabaciones .m4a dentro de " +
-                    "Recordings/. Realice una llamada grabada desde Samsung " +
-                    "Phone y vuelva a buscar."
-            } else {
-                "Autorice el permiso de audio para consultar MediaStore."
-            },
-            modifier = Modifier.padding(16.dp),
-        )
-    }
-}
-
-@Composable
-private fun ErrorPanel(message: String) {
+private fun ErrorNotice(message: String) {
     Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-        ),
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = PilotColors.errorSurface),
     ) {
         Text(
             text = message,
             modifier = Modifier.padding(16.dp),
-            color = MaterialTheme.colorScheme.onErrorContainer,
+            style = MaterialTheme.typography.bodyMedium,
+            color = PilotColors.error,
         )
     }
 }
 
 @Composable
-private fun RecordingCard(
-    recording: CallRecording,
-    playbackState: PlaybackState,
-    syncState: SyncRecordState,
-    isSyncing: Boolean,
-    isCurrentSync: Boolean,
-    onPlay: () -> Unit,
-    onSync: () -> Unit,
-) {
-    val parsed = recording.parsedFileName
-    val isCurrent = when (playbackState) {
-        is PlaybackState.Loading -> playbackState.uri == recording.contentUri
-        is PlaybackState.Playing -> playbackState.uri == recording.contentUri
-        is PlaybackState.Paused -> playbackState.uri == recording.contentUri
-        is PlaybackState.Error -> playbackState.uri == recording.contentUri
-        else -> false
-    }
-    val buttonLabel = when {
-        playbackState is PlaybackState.Loading &&
-            playbackState.uri == recording.contentUri -> "ABRIENDO..."
-        playbackState is PlaybackState.Playing &&
-            playbackState.uri == recording.contentUri -> "PAUSAR"
-        playbackState is PlaybackState.Paused &&
-            playbackState.uri == recording.contentUri -> "CONTINUAR"
-        else -> "REPRODUCIR"
-    }
-
-    Card {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
-            Text(
-                text = parsed?.phoneNumber?.let(::prettyPhoneNumber)
-                    ?: "Número no interpretado",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                text = parsed?.parsedDate?.let(::formatDateTime)
-                    ?: recording.dateModifiedSeconds?.let(::formatEpochSeconds)
-                    ?: recording.dateAddedSeconds?.let(::formatEpochSeconds)
-                    ?: "Fecha no disponible",
-            )
-            Text("Duración: ${formatDuration(recording.durationMs)}")
-            Text("Tamaño: ${formatBytes(recording.sizeBytes)}")
-            Text(
-                text = "Archivo: ${recording.displayName}",
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "Ruta: ${recording.relativePath ?: "no expuesta por MediaStore"}",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = "Content URI: ${recording.contentUri}",
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (parsed == null) {
-                Text(
-                    text = "El nombre no coincide con el patrón Samsung YYMMDD_HHMMSS; " +
-                        "se conserva el nombre original.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            OutlinedButton(
-                onClick = onPlay,
-                enabled = !(
-                    playbackState is PlaybackState.Loading &&
-                        playbackState.uri == recording.contentUri
-                    ),
-                ) {
-                Text(buttonLabel)
-            }
-            if (isCurrent && playbackState is PlaybackState.Error) {
-                Text(
-                    text = playbackState.message,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            SyncStatusPanel(
-                state = syncState,
-                isSyncing = isSyncing,
-                isCurrentSync = isCurrentSync,
-                onSync = onSync,
-            )
-        }
-    }
-}
-
-@Composable
-private fun SyncStatusPanel(
-    state: SyncRecordState,
-    isSyncing: Boolean,
-    isCurrentSync: Boolean,
-    onSync: () -> Unit,
-) {
-    val statusText = when {
-        isCurrentSync -> "Sincronizando..."
-        else -> when (state.status) {
-            SyncStatus.PENDING -> "Pendiente"
-            SyncStatus.UPLOADING -> "Subiendo audio"
-            SyncStatus.AUDIO_UPLOADED -> "Audio subido; falta registrar metadatos"
-            SyncStatus.SYNCED -> "Sincronizada"
-            SyncStatus.FAILED -> "Error"
-        }
-    }
-    val buttonText = when {
-        isCurrentSync -> "SINCRONIZANDO..."
-        state.status == SyncStatus.AUDIO_UPLOADED -> "REINTENTAR REGISTRO"
-        state.status == SyncStatus.FAILED -> "REINTENTAR"
-        else -> "SINCRONIZAR"
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun QuietMessage(message: String) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
         Text(
-            text = "Estado de sincronización: $statusText",
-            fontWeight = FontWeight.SemiBold,
+            text = message,
+            modifier = Modifier.padding(18.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = PilotColors.muted,
         )
-        if (state.attemptCount > 0) {
-            Text("Intentos: ${state.attemptCount}")
-        }
-        state.lastError?.let { error ->
-            Text(
-                text = error,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
-        if (state.status != SyncStatus.SYNCED) {
-            OutlinedButton(
-                onClick = onSync,
-                enabled = !isSyncing,
-            ) {
-                Text(buttonText)
-            }
-        }
     }
 }
 
 @Composable
-private fun DiagnosticPanel(report: com.maipu.callsync.data.DiagnosticReport) {
-    var expanded by remember { mutableStateOf(false) }
-    Card {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
+private fun DiagnosticPanel(report: DiagnosticReport) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        TextButton(onClick = { expanded = !expanded }) {
+            Text(if (expanded) "Ocultar soporte y diagnóstico" else "Soporte y diagnóstico")
+        }
+        if (expanded) {
+            Card(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
             ) {
-                Text(
-                    text = "DIAGNÓSTICO",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                OutlinedButton(onClick = { expanded = !expanded }) {
-                    Text(if (expanded) "OCULTAR" else "MOSTRAR")
-                }
-            }
-            if (expanded) {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text("Audios totales en MediaStore: ${report.totalAudioCount}")
-                    Text("Audios dentro de Recordings: ${report.recordingsCount}")
-                    Text("Audios dentro de Recordings/Call: ${report.callRecordingsCount}")
-                    Text("Permiso concedido: ${if (report.permissionGranted) "sí" else "no"}")
+                    Text(
+                        text = "Datos para soporte",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    HorizontalDivider(color = PilotColors.border)
+                    Text("Audios en MediaStore: ${report.totalAudioCount}")
+                    Text("Audios en Recordings: ${report.recordingsCount}")
+                    Text("Audios en Recordings/Call: ${report.callRecordingsCount}")
+                    Text("Permiso de audio: ${if (report.permissionGranted) "concedido" else "pendiente"}")
                     Text("Android: ${report.androidVersion}")
-                    Text("Fabricante: ${report.manufacturer}")
-                    Text("Modelo: ${report.model}")
-                    if (report.errors.isEmpty()) {
-                        Text("Errores de acceso: ninguno")
-                    } else {
-                        Text("Errores de acceso:")
-                        report.errors.forEach { error ->
-                            Text("• $error", color = MaterialTheme.colorScheme.error)
-                        }
+                    Text("Dispositivo: ${report.manufacturer} ${report.model}")
+                    report.errors.forEach { error ->
+                        Text(error, color = PilotColors.error)
                     }
                 }
             }
         }
     }
-}
-
-private fun formatDateTime(date: Date): String =
-    SimpleDateFormat("dd/MM/yyyy - HH:mm", Locale("es", "AR")).format(date)
-
-private fun formatEpochSeconds(seconds: Long): String =
-    formatDateTime(Date(seconds * 1000))
-
-private fun formatDuration(durationMs: Long?): String {
-    if (durationMs == null || durationMs < 0) return "no disponible"
-    val totalSeconds = durationMs / 1000
-    return "%02d:%02d".format(totalSeconds / 60, totalSeconds % 60)
-}
-
-private fun formatBytes(bytes: Long?): String {
-    if (bytes == null || bytes < 0) return "no disponible"
-    if (bytes < 1024 * 1024) return "%.0f KB".format(bytes / 1024.0)
-    return "%.2f MB".format(bytes / (1024.0 * 1024.0))
-}
-
-private fun prettyPhoneNumber(phone: String): String {
-    val compact = phone.replace(" ", "")
-    if (compact.startsWith("+54") && compact.length == 13) {
-        return compact.substring(0, 3) + " " +
-            compact.substring(3, 6) + " " +
-            compact.substring(6)
-    }
-    return phone
 }

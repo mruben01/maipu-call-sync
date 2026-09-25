@@ -12,6 +12,7 @@ data class SyncRecordState(
     val status: SyncStatus = SyncStatus.PENDING,
     val attemptCount: Int = 0,
     val lastError: String? = null,
+    val updatedAtMillis: Long? = null,
 )
 
 data class SyncAttemptOutcome(
@@ -35,6 +36,7 @@ data class StoredSyncEntry(
     val metadata: CallRecordingMetadata,
     val attemptCount: Int,
     val lastError: String?,
+    val updatedAtMillis: Long,
 )
 
 fun CallRecording.syncSourceKey(): String =

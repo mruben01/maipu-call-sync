@@ -52,18 +52,33 @@ class CallSyncViewModel(application: Application) : AndroidViewModel(application
             refreshPermissionState()
             return
         }
+        if (_uiState.value.isLoading) return
 
         _uiState.value = _uiState.value.copy(isLoading = true, errorMessage = null)
         viewModelScope.launch(Dispatchers.IO) {
-            val result = repository.findRecordings(permissionGranted)
-            val syncStatuses = syncRepository.statesFor(result.recordings)
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                recordings = result.recordings,
-                syncStatuses = syncStatuses,
-                diagnostics = result.diagnostics,
-                errorMessage = result.diagnostics.errors.firstOrNull(),
-            )
+            try {
+                val result = repository.findRecordings(permissionGranted)
+                val syncStatuses = if (result.diagnostics.errors.isEmpty()) {
+                    syncRepository.statesFor(result.recordings)
+                } else {
+                    emptyMap()
+                }
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    hasScanned = result.diagnostics.errors.isEmpty(),
+                    recordings = result.recordings,
+                    syncStatuses = syncStatuses,
+                    diagnostics = result.diagnostics,
+                    errorMessage = result.diagnostics.errors.firstOrNull(),
+                )
+            } catch (exception: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    hasScanned = false,
+                    errorMessage = "No se pudo leer el estado local de las llamadas " +
+                        "(${exception.javaClass.simpleName}).",
+                )
+            }
         }
     }
 
@@ -162,6 +177,7 @@ class CallSyncViewModel(application: Application) : AndroidViewModel(application
 data class CallSyncUiState(
     val permissionGranted: Boolean = false,
     val isLoading: Boolean = false,
+    val hasScanned: Boolean = false,
     val recordings: List<CallRecording> = emptyList(),
     val syncStatuses: Map<String, SyncRecordState> = emptyMap(),
     val isSyncing: Boolean = false,

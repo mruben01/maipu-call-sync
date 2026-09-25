@@ -90,6 +90,7 @@ class CallSyncStore(context: Context) : SQLiteOpenHelper(
                 ),
                 attemptCount = cursor.getInt(cursor.getColumnIndexOrThrow("attempt_count")),
                 lastError = cursor.getString(cursor.getColumnIndexOrThrow("last_error")),
+                updatedAtMillis = cursor.getLong(cursor.getColumnIndexOrThrow("updated_at")),
             )
         }
 
@@ -99,6 +100,7 @@ class CallSyncStore(context: Context) : SQLiteOpenHelper(
                 status = it.status,
                 attemptCount = it.attemptCount,
                 lastError = it.lastError,
+                updatedAtMillis = it.updatedAtMillis,
             )
         }
 

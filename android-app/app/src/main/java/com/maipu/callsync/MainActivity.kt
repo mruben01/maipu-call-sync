@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
                 viewModel.refreshPermissionState()
                 if (granted) {
                     CallSyncAutoScheduler.enqueueImmediate(this@MainActivity)
+                    viewModel.scan()
                 }
             }
 
@@ -52,6 +53,7 @@ class MainActivity : ComponentActivity() {
             PackageManager.PERMISSION_GRANTED
         ) {
             CallSyncAutoScheduler.enqueueImmediate(this)
+            viewModel.scan()
         }
     }
 
