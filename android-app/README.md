@@ -1,6 +1,6 @@
-# Maipú Call Sync — POC Android nativa
+# Maipú Call Sync — aplicación Android
 
-Esta carpeta contiene el proyecto Android nativo de la prueba de concepto.
+Esta carpeta contiene el proyecto Android nativo de Maipú Call Sync.
 La aplicación **no graba llamadas** ni usa VoIP/SIP. Consulta `MediaStore.Audio`
 para detectar grabaciones `.m4a` de Samsung Phone, las reproduce mediante su
 `Content URI` y las sincroniza automáticamente con Supabase sin moverlas ni
@@ -9,7 +9,7 @@ eliminarlas. También conserva la sincronización manual.
 ## Alcance implementado
 
 - Kotlin + Gradle + Android SDK.
-- Material 3 con una pantalla única para la POC.
+- Material 3 con Inicio y Reporte para el teléfono actual.
 - Solicitud de `READ_MEDIA_AUDIO` en Android 13 o superior.
 - Compatibilidad con `READ_EXTERNAL_STORAGE` en Android 12 o anterior.
 - Consulta oficial de `MediaStore.Audio.Media`.
@@ -21,7 +21,8 @@ eliminarlas. También conserva la sincronización manual.
 - Parser independiente del nombre observado en Samsung:
   `Grabación de llamada +543513993670_260918_090437.m4a`.
 - Reproducción por `Content URI`, sin copiar el audio.
-- Sección de diagnóstico con conteos, dispositivo, versión Android y errores.
+- Diagnóstico interno con conteos, dispositivo, versión Android y errores;
+  ya no se muestra la sección técnica al vendedor.
 - Sincronización manual con Supabase Storage (`call-recordings`) y Data API
   (`public.call_recordings`).
 - Lectura del audio por streaming desde `ContentResolver`; no se guarda una
@@ -35,7 +36,9 @@ eliminarlas. También conserva la sincronización manual.
 - WorkManager restaura el trabajo programado después de reiniciar el teléfono.
 - Cada ejecución procesa como máximo dos grabaciones listas y encadena el resto
   para no agotar el tiempo disponible de ejecución en segundo plano.
-- No incluye autenticación corporativa, TIMM, WISE, Power BI, transcripción,
+- El monitoreo V3 usa una credencial independiente por instalación y un
+  servicio central; no modifica la autenticación del flujo de audios.
+- No incluye TIMM, WISE, Power BI, transcripción,
   IA, publicidad ni trackers.
 
 ## Compatibilidad de herramientas
@@ -353,7 +356,105 @@ La POC no usa `DATA` ni una ruta absoluta como requisito. La única referencia
 de ubicación usada para filtrar es `MediaStore.MediaColumns.RELATIVE_PATH`
 cuando Android la proporciona.
 
-## Siguiente fase
+## V3: alta de los dos Samsung del piloto
 
-La automatización en segundo plano con WorkManager sigue fuera de esta etapa.
-Por ahora, el usuario inicia cada sincronización desde la pantalla.
+El monitoreo es **independiente** de la sincronización de audios ya validada.
+La nueva APK sigue usando el mismo proyecto de Supabase y el `device_id` que
+genera la instalación existente. Antes de instalarla, aplicar la migración
+`supabase/migrations/20260925000000_device_monitoring_v3.sql` y desplegar
+`monitor-report` con autenticación propia (verificación JWT de la puerta de
+Edge Functions desactivada **solo** para esta función; la función verifica el
+secreto de cada teléfono). Su clave de servicio queda exclusivamente en
+Supabase; nunca se copia a los teléfonos.
+
+1. Instalar la nueva APK **sobre la versión existente**, sin borrar datos de
+   la aplicación. Esto conserva el `device_id` y los estados locales. Abrir la
+   app en el **teléfono A**. La sincronización de audios no depende de completar
+   el alta de monitoreo.
+2. En la configuración inicial de A ingresar nombre y apellido del vendedor A
+   y la línea corporativa A. Revisar cuidadosamente: la identidad queda
+   bloqueada frente a cambios accidentales. Anotar o copiar **device_id** y
+   **huella SHA-256 de monitoreo** desde la tarjeta «Pendiente de vinculación».
+   Esa huella **no es** el secreto del teléfono. No solicitar, copiar ni
+   transmitir el secreto bruto: la aplicación nunca lo muestra.
+3. Repetir el paso anterior en el **teléfono B**, con vendedor y línea B.
+   Comprobar que el `device_id` y la huella son distintos de los de A.
+4. Un administrador autorizado entra en el **SQL Editor del mismo proyecto de
+   Supabase** y registra cada asociación. Sustituir los campos entre `<...>`
+   por lo copiado de la pantalla. La línea debe coincidir exactamente con lo
+   ingresado en el teléfono, incluidos espacios o prefijos. **No ingresar
+   secretos de monitoreo en SQL**.
+
+   ```sql
+   BEGIN;
+   INSERT INTO public.devices (device_id, seller_name, corporate_phone)
+   VALUES
+     ('<UUID_A>'::uuid, '<VENDEDOR_A>', '<LINEA_A>'),
+     ('<UUID_B>'::uuid, '<VENDEDOR_B>', '<LINEA_B>');
+
+   INSERT INTO public.device_monitor_credentials (device_id, token_hash)
+   VALUES
+     ('<UUID_A>'::uuid, '<HUELLA_SHA256_A>'),
+     ('<UUID_B>'::uuid, '<HUELLA_SHA256_B>');
+   COMMIT;
+   ```
+
+   Revisar los nombres si incluyen comillas simples: SQL exige duplicarlas.
+   Nunca reutilizar una misma huella entre instalaciones. Las tablas nuevas
+   no permiten escritura directa de la APK: solo la función central acepta
+   reportes que acrediten el secreto correspondiente a la huella registrada.
+5. Abrir nuevamente cada app con Internet. El reporte al abrir se limita para
+   no duplicar trabajo; WorkManager también intentará enviar el heartbeat
+   aproximadamente cada dos horas, sin garantía de minuto exacto. Esperar a
+   que cada teléfono muestre «Vinculado» y **verificar ambos en Supabase**:
+
+   ```sql
+   SELECT d.device_id, d.seller_name, d.corporate_phone, d.active,
+          d.last_heartbeat, d.last_scan_received_at, d.permissions_ok,
+          d.health_status, d.calls_detected, d.calls_synced,
+          d.calls_pending, d.calls_error, c.revoked_at
+   FROM public.devices AS d
+   JOIN public.device_monitor_credentials AS c USING (device_id)
+   WHERE d.device_id IN ('<UUID_A>'::uuid, '<UUID_B>'::uuid);
+   ```
+
+   Deben aparecer **dos filas distintas**, ambas con `active = true`,
+   `revoked_at IS NULL`, el vendedor y línea correctos y `last_heartbeat`
+   informado. Los conteos pueden quedar `NULL` hasta una lectura local válida:
+   no reemplazarlos por ceros inventados. También debe cumplirse
+   `calls_detected = calls_synced + calls_pending + calls_error` cuando haya
+   conteos.
+
+Si el teléfono sigue «Pendiente de vinculación», comprobar que `device_id` y
+huella se copiaron exactamente, la línea/vendedor coinciden con la asignación
+administrativa y que `monitor-report` está desplegada. Un 401 indica que el
+secreto no corresponde a una credencial vigente; **no** cambiar las policies
+existentes para intentar solucionarlo. Si se pierde el teléfono o su
+credencial, revocar la fila de `device_monitor_credentials` y marcar
+`devices.active = false` administrativamente antes de volver a vincular.
+
+**Reinstalación:** desinstalar o borrar los datos puede generar un nuevo
+`device_id` y destruye la clave protegida por Android Keystore. Requiere
+revocar la credencial anterior y dar de alta el nuevo identificador; no se debe
+asumir que el teléfono físico sigue siendo la misma instalación. Para
+250–300 líneas está previsto sustituir estos INSERT manuales por enrolamiento
+administrado.
+
+## Reportes, alertas y correo
+
+Inicio y Reporte muestran únicamente llamadas del teléfono actual. Para
+Hoy/Ayer/7 días solo se asignan a una fecha las llamadas cuya fecha de
+grabación se conoce de forma fiable; las de fecha desconocida no se inventan.
+Los reportes diarios centrales usan `America/Argentina/Cordoba`. Las
+estadísticas por dispositivo conservan fechas anteriores en Supabase; cada
+heartbeat actualiza solamente la ventana reciente.
+
+`device_alerts` conserva una sola incidencia abierta por dispositivo y tipo.
+No se deduce la causa de un heartbeat ausente: la evaluación automática
+`HEARTBEAT_MISSING` queda **desactivada** hasta medir los dos Samsung y
+acordar un umbral. `device_email_recipients`,
+`device_daily_report_settings` y `device_email_outbox` preparan destinatarios,
+hora local y auditoría del correo. La generación central del resumen está
+disponible por `daily-report`, pero **no hay proveedor de email, envío ni
+programación automática de correo activados**: requieren una aprobación
+posterior. Ningún teléfono envía email.

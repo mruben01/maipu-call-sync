@@ -35,21 +35,21 @@ import java.util.Date
 import java.util.Locale
 
 internal object PilotColors {
-    val ink = Color(0xFF19343C)
-    val muted = Color(0xFF5D7175)
-    val accent = Color(0xFF0B6E69)
-    val background = Color(0xFFF3F7F6)
-    val border = Color(0xFFDCE7E5)
-    val success = Color(0xFF0A7366)
-    val successSurface = Color(0xFFE5F3EF)
-    val pending = Color(0xFF95620E)
-    val pendingSurface = Color(0xFFFFF4E2)
-    val error = Color(0xFFB13E46)
-    val errorSurface = Color(0xFFFAEAEB)
+    val ink = Color(0xFF29232A)
+    val muted = Color(0xFF756B73)
+    val accent = Color(0xFFB5126A)
+    val background = Color(0xFFFAF7F9)
+    val border = Color(0xFFEDE3E9)
+    val success = Color(0xFF23836D)
+    val successSurface = Color(0xFFE6F4EF)
+    val pending = Color(0xFF9A6816)
+    val pendingSurface = Color(0xFFFFF3DF)
+    val error = Color(0xFFB33D4B)
+    val errorSurface = Color(0xFFFBEAEC)
 }
 
 @Composable
-internal fun DashboardHeader() {
+internal fun DashboardHeader(sellerName: String, corporateLine: String) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -61,17 +61,31 @@ internal fun DashboardHeader() {
         )
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                text = "MUNDO MAIPÚ  /  HERRAMIENTA INTERNA",
+                text = "MAIPÚ",
                 style = MaterialTheme.typography.labelSmall,
                 color = PilotColors.accent,
                 fontWeight = FontWeight.Bold,
             )
             Text(
                 text = "Maipú Call Sync",
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = PilotColors.ink,
             )
+            Text(
+                text = "Sincronización de llamadas",
+                style = MaterialTheme.typography.bodySmall,
+                color = PilotColors.muted,
+            )
+        }
+    }
+    if (sellerName.isNotBlank() || corporateLine.isNotBlank()) {
+        Column(
+            modifier = Modifier.padding(start = 70.dp, top = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(sellerName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text("Línea $corporateLine", style = MaterialTheme.typography.bodySmall, color = PilotColors.muted)
         }
     }
 }
@@ -85,8 +99,12 @@ internal fun StatusHero(
 ) {
     val (title, detail, tint, surface) = when (snapshot.status) {
         DashboardStatus.ACTIVE -> StatusAppearance(
-            "Sincronización activa",
-            "Sin pendientes en la última revisión.",
+            if (snapshot.counts?.total == 0) "Listo para sincronizar" else "Sincronización activa",
+            if (snapshot.counts?.total == 0) {
+                "Todavía no hay llamadas grabadas para respaldar."
+            } else {
+                "Todas tus llamadas están sincronizadas."
+            },
             PilotColors.success,
             PilotColors.successSurface,
         )
@@ -101,7 +119,7 @@ internal fun StatusHero(
             if (!permissionGranted) {
                 "Para respaldar llamadas, autorizá el acceso al audio."
             } else {
-                "Revisá las llamadas con error más abajo."
+                "Existe una condición que puede afectar la sincronización."
             },
             PilotColors.error,
             PilotColors.errorSurface,
@@ -385,6 +403,35 @@ internal fun InformationCard(
                     color = PilotColors.muted,
                 )
             }
+        }
+    }
+}
+
+@Composable
+internal fun LastSyncCard(snapshot: DashboardSnapshot) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 15.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                "ÚLTIMA SINCRONIZACIÓN",
+                style = MaterialTheme.typography.labelSmall,
+                color = PilotColors.muted,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = snapshot.lastSuccessfulSyncAtMillis?.let {
+                    SimpleDateFormat("dd MMM yyyy · HH:mm", Locale("es", "AR")).format(Date(it))
+                } ?: "Sin sincronizaciones registradas",
+                style = MaterialTheme.typography.titleSmall,
+                color = PilotColors.ink,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }

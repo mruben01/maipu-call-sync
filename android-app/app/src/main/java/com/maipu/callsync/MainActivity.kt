@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maipu.callsync.background.CallSyncAutoScheduler
+import com.maipu.callsync.monitoring.MonitoringScheduler
 import com.maipu.callsync.ui.CallSyncScreen
 import com.maipu.callsync.ui.CallSyncViewModel
 
@@ -21,6 +22,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        MonitoringScheduler.ensureScheduled(this)
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
             val permissionLauncher = rememberLauncherForActivityResult(
@@ -48,6 +50,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        MonitoringScheduler.enqueueIfDue(this)
         viewModel.refreshPermissionState()
         if (ContextCompat.checkSelfPermission(this, requiredAudioPermission()) ==
             PackageManager.PERMISSION_GRANTED

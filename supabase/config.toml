@@ -1,0 +1,5 @@
+[functions.monitor-report]
+verify_jwt = false
+
+[functions.daily-report]
+verify_jwt = false
